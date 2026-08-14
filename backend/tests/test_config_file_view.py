@@ -123,6 +123,25 @@ class ProxyConfigUpdateTests(unittest.TestCase):
         self.assertEqual(selected["config"]["browser_engine"], "cloakbrowser")
         self.assertEqual(fallback["config"]["browser_engine"], "camoufox")
 
+    def test_mailhub_config_is_public_and_normalized(self):
+        updates = {
+            "email_provider": "mailhub",
+            "mailhub_api_base": " https://mailhub.example.com/api/v1/ ",
+            "mailhub_api_key": "mailhub-secret",
+            "mailhub_session_ttl_seconds": 0,
+            "mailhub_hint_from_contains": "x.ai",
+        }
+        with patch.object(gr, "load_config"), patch.object(gr, "save_config") as save:
+            result = _apply_config_updates(updates)
+
+        self.assertEqual(gr.config["email_provider"], "mailhub")
+        self.assertEqual(gr.config["mailhub_api_base"], "https://mailhub.example.com/api/v1/")
+        self.assertEqual(gr.config["mailhub_api_key"], "mailhub-secret")
+        self.assertEqual(gr.config["mailhub_session_ttl_seconds"], 1)
+        self.assertEqual(result["config"]["mailhub_hint_from_contains"], "x.ai")
+        self.assertIn("mailhub_api_key", result["config"]["_sensitive_keys"])
+        save.assert_called_once_with()
+
 
 if __name__ == "__main__":
     unittest.main()

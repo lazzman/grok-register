@@ -35,6 +35,7 @@ from backend.mailbox import cloudflare_worker as cloudflare_provider
 from backend.mailbox import cloud_mail as cloudmail_provider
 from backend.mailbox import duck_mail as duckmail_provider
 from backend.mailbox import mail_nest as mailnest_provider
+from backend.mailbox import mail_hub as mailhub_provider
 from backend.mailbox import outlook_pool as outlookemail_provider
 from backend.mailbox import yyds_mail as yyds_provider
 from backend.mailbox.utilities import extract_verification_code as _extract_code
@@ -385,6 +386,15 @@ DEFAULT_CONFIG = {
     ),
     "mailnest_api_key": "",
     "mailnest_project_code": "x-ai001",
+    # Mail Hub OTP 聚合接码服务
+    "mailhub_api_base": "",
+    "mailhub_api_key": "",
+    "mailhub_session_ttl_seconds": 300,
+    "mailhub_verification_pattern": (
+        "(?<![A-Za-z0-9-])([A-Za-z0-9]{3}-[A-Za-z0-9]{3})(?![A-Za-z0-9-])"
+    ),
+    "mailhub_hint_from_contains": "",
+    "mailhub_hint_subject_contains": "",
     # YYDS：留空自动选已验证域名；填写则固定该域名
     "yyds_default_domain": "",
     # 账号间注册间隔（秒），0=不等待。填一个整数=N秒固定等待，填区间"60-120"=随机等待
@@ -1039,6 +1049,73 @@ def mailnest_get_code(email, timeout=60, poll_interval=3, log_callback=None, can
         sleep_with_cancel=sleep_with_cancel,
         log_callback=log_callback,
         cancel_callback=cancel_callback,
+    )
+
+
+def get_mailhub_api_base():
+    return str(config.get("mailhub_api_base", "") or "").strip().rstrip("/")
+
+
+def get_mailhub_api_key():
+    return str(config.get("mailhub_api_key", "") or "").strip()
+
+
+def get_mailhub_session_ttl_seconds():
+    try:
+        return max(1, int(config.get("mailhub_session_ttl_seconds", 300) or 300))
+    except (TypeError, ValueError):
+        return 300
+
+
+def get_mailhub_verification_pattern():
+    pattern = str(config.get("mailhub_verification_pattern", "") or "").strip()
+    return pattern or mailhub_provider.DEFAULT_VERIFICATION_PATTERN
+
+
+def get_mailhub_hint_from_contains():
+    return str(config.get("mailhub_hint_from_contains", "") or "").strip()
+
+
+def get_mailhub_hint_subject_contains():
+    return str(config.get("mailhub_hint_subject_contains", "") or "").strip()
+
+
+def mailhub_get_email_and_token():
+    return mailhub_provider.create_mailbox(
+        http_post,
+        get_mailhub_api_base(),
+        get_mailhub_api_key(),
+        session_ttl_seconds=get_mailhub_session_ttl_seconds(),
+        verification_pattern=get_mailhub_verification_pattern(),
+        hint_from_contains=get_mailhub_hint_from_contains(),
+        hint_subject_contains=get_mailhub_hint_subject_contains(),
+    )
+
+
+def mailhub_get_oai_code(
+    dev_token,
+    email,
+    timeout=180,
+    poll_interval=3,
+    log_callback=None,
+    cancel_callback=None,
+    resend_callback=None,
+):
+    del dev_token
+    return mailhub_provider.wait_for_code(
+        http_get,
+        http_delete,
+        get_mailhub_api_base(),
+        get_mailhub_api_key(),
+        email,
+        verification_pattern=get_mailhub_verification_pattern(),
+        timeout=timeout,
+        poll_interval=poll_interval,
+        raise_if_cancelled=raise_if_cancelled,
+        sleep_with_cancel=sleep_with_cancel,
+        log_callback=log_callback,
+        cancel_callback=cancel_callback,
+        resend_callback=resend_callback,
     )
 
 
@@ -2323,6 +2400,8 @@ def get_email_and_token(api_key=None):
         return yyds_get_email_and_token(api_key=api_key, jwt=get_yyds_jwt())
     if provider == "cloudmail":
         return cloudmail_get_email_and_token()
+    if provider == "mailhub":
+        return mailhub_get_email_and_token()
     if provider == "cloudflare":
         api_base = get_cloudflare_api_base()
         if not api_base:
@@ -2395,6 +2474,16 @@ def get_oai_code(
         )
     if provider == "cloudmail":
         return cloudmail_get_oai_code(
+            dev_token,
+            email,
+            timeout=timeout,
+            poll_interval=poll_interval,
+            log_callback=log_callback,
+            cancel_callback=cancel_callback,
+            resend_callback=resend_callback,
+        )
+    if provider == "mailhub":
+        return mailhub_get_oai_code(
             dev_token,
             email,
             timeout=timeout,

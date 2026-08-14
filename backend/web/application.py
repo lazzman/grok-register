@@ -114,6 +114,12 @@ CONFIG_PUBLIC_KEYS = (
     "grokiq_webhook_timeout_seconds",
     "mailnest_api_key",
     "mailnest_project_code",
+    "mailhub_api_base",
+    "mailhub_api_key",
+    "mailhub_session_ttl_seconds",
+    "mailhub_verification_pattern",
+    "mailhub_hint_from_contains",
+    "mailhub_hint_subject_contains",
     "yyds_api_key",
     "yyds_jwt",
     "yyds_default_domain",
@@ -133,6 +139,7 @@ SENSITIVE_HINT_KEYS = {
     "sub2api_api_key",
     "grokiq_webhook_token",
     "mailnest_api_key",
+    "mailhub_api_key",
     "yyds_api_key",
     "yyds_jwt",
     "proxy",
@@ -370,6 +377,7 @@ def _apply_config_updates(updates: Dict[str, Any]) -> Dict[str, Any]:
             "register_count",
             "register_workers",
             "outlookemail_top",
+            "mailhub_session_ttl_seconds",
             "grokiq_webhook_timeout_seconds",
             "sub2api_proxy_id",
             "sub2api_concurrency",
@@ -385,6 +393,8 @@ def _apply_config_updates(updates: Dict[str, Any]) -> Dict[str, Any]:
                 value = max(1, min(value, 8))
             elif key == "outlookemail_top":
                 value = max(1, min(value, 50))
+            elif key == "mailhub_session_ttl_seconds":
+                value = max(1, min(value, 86_400))
             elif key == "grokiq_webhook_timeout_seconds":
                 value = max(1, min(value, 60))
             elif key == "sub2api_proxy_id":
@@ -409,7 +419,7 @@ def _apply_config_updates(updates: Dict[str, Any]) -> Dict[str, Any]:
                 value = "more"
         elif key == "email_provider":
             value = str(value or "cloudflare").strip().lower() or "cloudflare"
-            if value not in {"cloudflare", "duckmail", "yyds", "mailnest", "outlookemail", "cloudmail"}:
+            if value not in {"cloudflare", "duckmail", "yyds", "mailnest", "mailhub", "outlookemail", "cloudmail"}:
                 value = "cloudflare"
         elif key == "outlookemail_source":
             value = str(value or "accounts").strip().lower()
@@ -437,6 +447,7 @@ def _apply_config_updates(updates: Dict[str, Any]) -> Dict[str, Any]:
             "outlookemail_api_base",
             "duckmail_api_base",
             "cloudflare_api_base",
+            "mailhub_api_base",
         ):
             value = proxy_update if key == "proxy" else str(value or "").strip()
             if key == "sub2api_remote_url":
