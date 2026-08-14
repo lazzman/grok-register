@@ -71,6 +71,12 @@
   "yyds_api_key": "",
   "yyds_jwt": "",
   "yyds_default_domain": "",
+  "mailhub_api_base": "",
+  "mailhub_api_key": "",
+  "mailhub_session_ttl_seconds": 300,
+  "mailhub_verification_pattern": "(?<![A-Za-z0-9-])([A-Za-z0-9]{3}-[A-Za-z0-9]{3})(?![A-Za-z0-9-])",
+  "mailhub_hint_from_contains": "",
+  "mailhub_hint_subject_contains": "",
   "mailnest_api_key": "",
   "mailnest_project_code": "x-ai001"
 }

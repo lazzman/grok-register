@@ -1,0 +1,4 @@
+interface:
+  display_name: "Grok Register 上游安全 Rebase"
+  short_description: "同步作者上游并保留本地 Mail Hub 与 Web 改动"
+  default_prompt: "使用 $grok-register-rebase-upstream 将当前分支安全 rebase 到 upstream/main，解决冲突并保留本地功能；未经我确认不要 push。"
