@@ -20,7 +20,7 @@
 
 - Web 控制台：任务进度、实时日志、账号管理和系统设置
 - Camoufox（Firefox，默认）与 CloakBrowser（Chromium）双浏览器后端，共用注册流程、代理和异常进程清理
-- 支持 Cloudflare、DuckMail / Mail.tm、YYDS、MailNest、OutlookEmail、CloudMail
+- 支持 Cloudflare、DuckMail / Mail.tm、YYDS、MailNest、Mail Hub OTP、OutlookEmail、CloudMail
 - 注册完成后生成 CPA / Grok2API JSON
 - Grok Build 导入成功后可通过持久 Webhook 通知 GrokIQ
 - JSON 查看、复制和下载
@@ -80,6 +80,24 @@ http://outlook-email:5000
 Docker 首次生成 `data/config.json` 时会预填该内部地址；已有配置可在“系统设置 → Outlook 邮箱池”中填写。
 
 OutlookEmail 数据保存在 `outlookemail-data/`，并已被 Git 和 Docker 构建上下文忽略。完整配置见 [DEPLOYMENT.md](DEPLOYMENT.md#可选-outlookemail-邮箱池)。
+
+## Mail Hub OTP 接码
+
+在“系统设置 → 邮箱服务”中选择 **Mail Hub OTP**，或在 `config.json` 中配置：
+
+```json
+{
+  "email_provider": "mailhub",
+  "mailhub_api_base": "https://mailhub.example.com",
+  "mailhub_api_key": "你的 API Key",
+  "mailhub_session_ttl_seconds": 300
+}
+```
+
+- `mailhub_api_base` 可填写服务根地址，或已包含 `/api/v1` 的地址。
+- 创建会话后，程序使用服务端分配的邮箱，并将会话 token 记录为 `mailhub:邮箱`，不会把 API Key 当成邮箱凭据保存。
+- 收码优先长轮询 `GET /api/v1/otp/{email}`；未返回验证码时回退查询邮件列表并本地解析。无论成功、超时、失败或取消，收码流程结束都会 `DELETE` 释放会话。
+- 可选 `mailhub_verification_pattern`、`mailhub_hint_from_contains` 与 `mailhub_hint_subject_contains`，分别用于指定验证码正则及服务端邮件筛选提示。
 
 ## 与 GrokIQ 联动
 
@@ -212,9 +230,10 @@ Windows 启动：
 
 | 配置项 | 说明 |
 | --- | --- |
-| `email_provider` | 邮箱服务商 |
+| `email_provider` | 邮箱服务商：`cloudflare` / `duckmail` / `yyds` / `mailnest` / `mailhub` / `outlookemail` / `cloudmail` |
 | `register_count` | 注册数量 |
 | `register_workers` | 并发数量，默认 1 |
+| `mailhub_api_base` / `mailhub_api_key` | Mail Hub OTP 的服务根地址与 API Key；可选 `mailhub_session_ttl_seconds`、验证码正则和邮件筛选提示 |
 | `proxy` | 注册和 OAuth 请求使用的 HTTP(S) 代理；支持 `http://host:port` 和 `http://user:password@host:port`，凭据中的特殊字符需使用 URL 百分号编码 |
 | `browser_engine` | 浏览器后端：`camoufox`（默认）或 `cloakbrowser` |
 | `browser_headless` | 本机无头模式；Docker 中强制关闭 |

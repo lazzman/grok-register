@@ -52,6 +52,11 @@ const PROVIDERS = [
     description: "Outlook 临时邮箱服务，需要 API Key 和项目代码。",
   },
   {
+    value: "mailhub",
+    label: "Mail Hub OTP",
+    description: "聚合接码服务；创建临时会话后长轮询验证码并自动释放。",
+  },
+  {
     value: "outlookemail",
     label: "OutlookEmail 邮箱池",
     description: "支持外部 accounts 账号池或站内 temp 临时邮箱。",
@@ -759,6 +764,17 @@ export function SettingsPage({ section = "registration" }: { section?: SettingsS
               <>
                 <ConfigField {...fieldState} label="API Key" field="mailnest_api_key" type="password" />
                 <ConfigField {...fieldState} label="项目代码" field="mailnest_project_code" helper="默认 x-ai001" />
+              </>
+            ) : null}
+
+            {selectedProvider.value === "mailhub" ? (
+              <>
+                <ConfigField {...fieldState} label="API 地址" field="mailhub_api_base" placeholder="https://mailhub.example.com" helper="可填写服务根地址或已带 /api/v1 的地址。" />
+                <ConfigField {...fieldState} label="API Key" field="mailhub_api_key" type="password" />
+                <ConfigField {...fieldState} label="会话 TTL（秒）" field="mailhub_session_ttl_seconds" type="number" helper="服务端临时邮箱会话时长，默认 300 秒。" />
+                <ConfigField {...fieldState} label="验证码正则" field="mailhub_verification_pattern" helper="留空使用默认 xAI 格式，例如 W7J-00I。" />
+                <ConfigField {...fieldState} label="发件人包含" field="mailhub_hint_from_contains" helper="可选：创建会话时传给服务端，用于过滤邮件。" />
+                <ConfigField {...fieldState} label="主题包含" field="mailhub_hint_subject_contains" helper="可选：创建会话时传给服务端，用于过滤邮件。" />
               </>
             ) : null}
 
