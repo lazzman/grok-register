@@ -13,7 +13,7 @@ class OutlookWorkflowTests(unittest.TestCase):
         gr.config.update(self.original_config)
 
     def test_all_email_providers_require_exact_cpa_success(self):
-        providers = ("duckmail", "yyds", "cloudflare", "mailnest", "outlookemail", "cloudmail")
+        providers = ("duckmail", "yyds", "cloudflare", "mailnest", "mailhub", "outlookemail", "cloudmail")
         for provider in providers:
             gr.config["email_provider"] = provider
             self.assertTrue(gr.registration_counts_as_success({"status": "success"}))
