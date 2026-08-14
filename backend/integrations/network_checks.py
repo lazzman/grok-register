@@ -295,6 +295,19 @@ def check_email_api(provider: str, config: dict, http_get: Callable, http_post: 
             resp = http_get(url, timeout=10)
             return "邮箱API", resp.status_code < 400, f"CloudMail HTTP {resp.status_code}"
 
+        if provider == "mailhub":
+            base = str(config.get("mailhub_api_base", "") or "").strip().rstrip("/")
+            key = str(config.get("mailhub_api_key", "") or "").strip()
+            if not base:
+                return "邮箱API", False, "未配置 mailhub_api_base"
+            if not key:
+                return "邮箱API", False, "未配置 mailhub_api_key"
+            # 兼容服务根地址和已带 /api/v1 的配置。
+            ping = f"{base}/ping" if base.lower().endswith("/api/v1") else f"{base}/api/v1/ping"
+            resp = http_get(ping, headers={"X-API-Key": key}, timeout=12)
+            ok = resp.status_code < 400
+            return "邮箱API", ok, f"Mail Hub HTTP {resp.status_code}"
+
         return "邮箱API", True, f"提供商 {provider} 跳过深度探测"
     except Exception as exc:
         return "邮箱API", False, str(exc)

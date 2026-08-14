@@ -84,6 +84,21 @@ GROK_WEB_COOKIE_SECURE=1
 
 如果 `data/config.json` 中的代理是 `http://127.0.0.1:7897`，Compose 会自动改用宿主机地址 `host.docker.internal:7897`。宿主机代理软件必须开启“允许局域网连接”或监听 `0.0.0.0`，否则容器仍然连不上。
 
+## Mail Hub OTP 接码
+
+在 Web 控制台的“系统设置 → 邮箱服务”选择 **Mail Hub OTP**，填写服务地址与 API Key；也可以直接修改 `data/config.json`：
+
+```json
+{
+  "email_provider": "mailhub",
+  "mailhub_api_base": "https://mailhub.example.com",
+  "mailhub_api_key": "你的 API Key",
+  "mailhub_session_ttl_seconds": 300
+}
+```
+
+`mailhub_api_base` 支持根地址和已带 `/api/v1` 的地址。注册机创建邮箱会话、长轮询验证码，并在收码流程结束时自动释放该会话。容器必须能直连 Mail Hub 地址。
+
 ## 可选 OutlookEmail 邮箱池
 
 `compose.yaml` 已把上游 [`assast/outlookEmail`](https://github.com/assast/outlookEmail) 镜像作为可选 `outlookemail` profile 接入。默认的 `docker compose up -d` 只启动 Grok Register；选择 OutlookEmail 邮箱、导入账号、读取验证码或停用邮箱时启动完整组合：
