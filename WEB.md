@@ -79,6 +79,8 @@ backend/tests/         # 后端单元测试
 
 - `GET /api/stats` 统计 + 任务状态
 - `GET /api/accounts` 账号列表
+- `POST /api/accounts/grok2api/import` 批量导入选中账号到远程 Grok2API
+- `POST /api/accounts/{id}/grok2api/import` 导入单个账号到远程 Grok2API
 - `POST /api/accounts/delete` 删除记录（可选删关联文件）
 - `GET /api/accounts/{id}/failure-screenshot` 查看浏览器失败现场截图
 - `GET/PUT /api/config` 读写配置
