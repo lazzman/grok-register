@@ -302,6 +302,25 @@ docker compose run --rm grok-register python /app/docker/cloakbrowser_smoke.py
 docker compose logs --tail=200 grok-register
 ```
 
+### Camoufox official/stable is not installed
+
+这表示镜像里只有 Camoufox 的 Python 包，没有浏览器内核。`ghcr.io/<user>/grok-register:latest` 若构建时 `camoufox fetch` 静默跳过，就会出现这个错误。
+
+先确认：
+
+```bash
+docker compose exec grok-register python -m camoufox version
+docker compose exec grok-register ls -la /opt/camoufox-cache/camoufox/browsers
+```
+
+`Installed: No` 或没有 `browsers/official/` 时，需要重新构建并发布镜像（不要只 `docker compose pull` 同一份坏镜像）。构建日志里必须出现 `Camoufox 已安装:`。临时救急（容器能访问 GitHub 时）：
+
+```bash
+docker compose exec grok-register python -m camoufox fetch
+```
+
+该缓存在镜像层内，不是 `data/` 卷；重建容器后仍会丢失，正式环境请重新构建镜像。
+
 ### 端口被占用
 
 在 `.env` 修改：
