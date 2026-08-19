@@ -72,6 +72,7 @@ CONFIG_PUBLIC_KEYS = (
     "outlookemail_pick_mode",
     "outlookemail_disable_after_cpa_success",
     "proxy",
+    "sticky_proxy",
     "enable_nsfw",
     "debug_mode",
     "browser_engine",
@@ -356,6 +357,7 @@ def _apply_config_updates(updates: Dict[str, Any]) -> Dict[str, Any]:
         value = updates[key]
         if key in (
             "enable_nsfw",
+            "sticky_proxy",
             "debug_mode",
             "browser_headless",
             "browser_low_traffic_mode",
