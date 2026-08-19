@@ -30,7 +30,15 @@ from playwright._impl._transport import PipeTransport as _PwPipeTransport
 from playwright.sync_api._generated import Playwright as _SyncPlaywright
 
 from backend.automation.page_adapter import BrowserAdapter, PageAdapter
-from backend.integrations.proxy import HTTP_PROXY_SCHEMES, parse_http_proxy_url
+from backend.integrations.proxy import (
+    HTTP_PROXY_SCHEMES,
+    format_proxy_options_for_log,
+    parse_http_proxy_url,
+)
+from backend.integrations.proxy_forwarder import (
+    proxy_dict_has_credentials,
+    start_local_auth_proxy,
+)
 
 
 class IsolatedCamoufox(_Camoufox):
@@ -153,6 +161,47 @@ def _proxies() -> dict:
     if _get_proxy:
         return _get_proxy() or {}
     return {}
+
+
+def _current_proxy_url() -> str:
+    proxies = _proxies()
+    return str(proxies.get("https") or proxies.get("http") or "").strip()
+
+
+def _stop_proxy_forwarder() -> None:
+    forwarder = getattr(_tls, "proxy_forwarder", None)
+    _tls.proxy_forwarder = None
+    _tls.browser_proxy_upstream = None
+    _tls.launch_proxy_url = None
+    if forwarder is None:
+        return
+    try:
+        forwarder.stop()
+    except Exception:
+        pass
+
+
+def browser_proxy_needs_refresh() -> bool:
+    """当前线程代理 URL 是否已与浏览器启动时不同（粘性会话更换）。"""
+    if active_browser() is None:
+        return False
+    launched = str(getattr(_tls, "launch_proxy_url", "") or "")
+    return launched != _current_proxy_url()
+
+
+def _attach_camoufox_auth_forwarder(opts: dict, engine: str) -> dict:
+    """Camoufox/Firefox 无法稳定发送 HTTP 代理认证，改为本地无认证入口。"""
+    proxy = opts.get("proxy") if isinstance(opts.get("proxy"), dict) else {}
+    _tls.browser_proxy_upstream = dict(proxy) if proxy else None
+    _tls.launch_proxy_url = _current_proxy_url()
+    if engine != BROWSER_ENGINE_CAMOUFOX or not proxy_dict_has_credentials(proxy):
+        _tls.proxy_forwarder = None
+        return opts
+    forwarder = start_local_auth_proxy(proxy)
+    _tls.proxy_forwarder = forwarder
+    patched = dict(opts)
+    patched["proxy"] = {"server": forwarder.listen_url}
+    return patched
 
 
 def _browser_locale() -> str:
@@ -493,7 +542,11 @@ def _build_camoufox_proxy(proxy_str: str) -> dict:
         return {}
     parsed = urlparse(proxy_str)
     if parsed.scheme.lower() in HTTP_PROXY_SCHEMES:
-        return parse_http_proxy_url(proxy_str)
+        result = parse_http_proxy_url(proxy_str)
+        # Playwright Firefox 在只有 username、没有 password 字段时往往不发认证。
+        if "username" in result and "password" not in result:
+            result["password"] = ""
+        return result
     if parsed.scheme and parsed.hostname:
         server = f"{parsed.scheme}://{parsed.hostname}"
         if parsed.port:
@@ -737,7 +790,9 @@ def start_browser(log_callback=None) -> Tuple[object, object]:
         browser_context = None
         lifecycle = None
         try:
+            _stop_proxy_forwarder()
             opts = create_browser_options(unique_profile=True, engine=engine)
+            opts = _attach_camoufox_auth_forwarder(opts, engine)
             profile_dir = getattr(_tls, "profile_dir", None)
 
             if engine == BROWSER_ENGINE_CLOAKBROWSER:
@@ -777,11 +832,19 @@ def start_browser(log_callback=None) -> Tuple[object, object]:
                 log_callback(f"[*] 浏览器后端: {engine_label}")
                 log_callback(f"[*] 浏览器模式: {'无头' if opts['headless'] else '有头'}")
                 log_callback(f"[*] 浏览器语言: {opts['locale']}")
-                proxy_options = opts.get("proxy") if isinstance(opts.get("proxy"), dict) else {}
-                proxy_server = str(proxy_options.get("server") or "").strip()
-                log_callback(
-                    f"[*] {engine_label} 网络: {'代理 ' + proxy_server if proxy_server else '直连（未配置代理）'}"
+                upstream = getattr(_tls, "browser_proxy_upstream", None)
+                proxy_display = format_proxy_options_for_log(
+                    upstream if isinstance(upstream, dict) else {}
                 )
+                forwarder = getattr(_tls, "proxy_forwarder", None)
+                if proxy_display and forwarder is not None:
+                    log_callback(
+                        f"[*] {engine_label} 网络: 本地转发 {forwarder.listen_url} → {proxy_display}"
+                    )
+                else:
+                    log_callback(
+                        f"[*] {engine_label} 网络: {'代理 ' + proxy_display if proxy_display else '直连（未配置代理）'}"
+                    )
             if log_callback and profile_dir:
                 log_callback(f"[Debug] 当前浏览器资料目录: {profile_dir}")
             if log_callback and attempt > 1:
@@ -795,6 +858,7 @@ def start_browser(log_callback=None) -> Tuple[object, object]:
                     f"[Debug] {engine_label} 启动失败(第{attempt}/4次, 连续失败{streak}): {exc}"
                 )
             _close_unwrapped_context(browser_context, lifecycle)
+            _stop_proxy_forwarder()
             profile_dir = profile_dir or getattr(_tls, "profile_dir", None)
             try:
                 cur = active_browser()
@@ -816,6 +880,7 @@ def stop_browser(force=False):
     current = active_browser()
     profile_dir = getattr(_tls, "profile_dir", None)
     set_browser_session(None, None)
+    _stop_proxy_forwarder()
     if current is None:
         _cleanup_profile_dir(profile_dir)
         return

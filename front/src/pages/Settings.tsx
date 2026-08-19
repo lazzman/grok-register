@@ -406,14 +406,22 @@ export function SettingsPage({ section = "registration" }: { section?: SettingsS
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </Link>
             </div>
-            <ConfigField
-              {...fieldState}
-              label="网络代理"
-              field="proxy"
-              type="password"
-              placeholder="http://user:password@host:port"
-              helper="支持无认证或用户名/密码认证的 HTTP(S) 代理；凭据含 @、:、/、#、% 等特殊字符时请使用 URL 百分号编码，例如 @ 写成 %40。注册浏览器与 xAI/OAuth 请求会共用此代理。"
-            />
+            <div className="space-y-3 sm:col-span-2">
+              <ConfigField
+                {...fieldState}
+                label="网络代理"
+                field="proxy"
+                type="password"
+                placeholder="http://user:password@host:port"
+                helper="支持无认证或用户名/密码认证的 HTTP(S) 代理；凭据含 @、:、/、#、% 等特殊字符时请使用 URL 百分号编码，例如 @ 写成 %40。注册浏览器与 xAI/OAuth 请求会共用此代理。粘性代理开启后，可把 {id} 写在用户名等位置，例如 http://grok-reg-{id}@host:port。Camoufox 会经本机 127.0.0.1 转发并注入认证，Firefox 本身不能稳定发送 Proxy-Authorization。"
+              />
+              <ToggleRow
+                title="粘性代理"
+                description="开启后，每轮注册会把代理地址中的 {id} 替换为唯一会话值；同一账号的浏览器与 OAuth 请求共用该值，下一轮账号会换新值。未写入 {id} 时此开关不生效。"
+                checked={!!config.sticky_proxy}
+                onCheckedChange={(value) => setField("sticky_proxy", value)}
+              />
+            </div>
             <ConfigField {...fieldState}
               label="账号间隔（秒）"
               field="account_interval"
