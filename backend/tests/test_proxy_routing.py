@@ -7,6 +7,7 @@ from unittest import mock
 from backend.automation import session as browser_session
 from backend.integrations import auth_exchange
 from backend.integrations import network_checks
+from backend.integrations.proxy import clear_sticky_proxy_session, current_sticky_proxy_id
 from backend.registration import engine as gr
 
 
@@ -15,6 +16,7 @@ class ProxyRoutingTests(unittest.TestCase):
         self.original_config = dict(gr.config)
 
     def tearDown(self):
+        clear_sticky_proxy_session()
         gr.config.clear()
         gr.config.update(self.original_config)
         browser_session.configure(
@@ -338,6 +340,359 @@ class ProxyRoutingTests(unittest.TestCase):
         self.assertEqual(name, "xai-fixture@example.com.json")
         factory.assert_called_once_with(trust_env=False)
         self.assertIsNone(session.post.call_args.kwargs["proxies"])
+
+
+class StickyProxyRuntimeTests(unittest.TestCase):
+    def setUp(self):
+        self.original_config = dict(gr.config)
+        clear_sticky_proxy_session()
+
+    def tearDown(self):
+        clear_sticky_proxy_session()
+        gr.config.clear()
+        gr.config.update(self.original_config)
+
+    def test_disabled_sticky_proxy_keeps_placeholder_literal(self):
+        gr.config["proxy"] = "http://{id}@127.0.0.1:1080"
+        gr.config["sticky_proxy"] = False
+        self.assertEqual(gr.get_proxies()["http"], "http://{id}@127.0.0.1:1080")
+        self.assertEqual(gr._ensure_sticky_proxy_for_slot(0), "")
+
+    def test_enabled_sticky_proxy_reuses_id_within_slot(self):
+        gr.config["proxy"] = "http://{id}@127.0.0.1:1080"
+        gr.config["sticky_proxy"] = True
+        first = gr._ensure_sticky_proxy_for_slot(0)
+        again = gr._ensure_sticky_proxy_for_slot(0)
+        next_slot = gr._ensure_sticky_proxy_for_slot(1)
+        self.assertTrue(first)
+        self.assertEqual(first, again)
+        self.assertNotEqual(first, next_slot)
+        self.assertEqual(gr.get_proxies()["http"], f"http://{next_slot}@127.0.0.1:1080")
+        self.assertEqual(gr.get_proxies()["https"], f"http://{next_slot}@127.0.0.1:1080")
+        self.assertEqual(gr._resolve_cpa_proxy(), f"http://{next_slot}@127.0.0.1:1080")
+
+    def test_sticky_proxy_without_placeholder_is_unchanged(self):
+        gr.config["proxy"] = "http://127.0.0.1:1080"
+        gr.config["sticky_proxy"] = True
+        self.assertEqual(gr._ensure_sticky_proxy_for_slot(0), "")
+        self.assertEqual(gr.get_proxies()["http"], "http://127.0.0.1:1080")
+
+    def test_sticky_proxy_survives_docker_host_rewrite(self):
+        gr.config["proxy"] = "http://{id}@127.0.0.1:1080"
+        gr.config["sticky_proxy"] = True
+        session_id = gr._ensure_sticky_proxy_for_slot(0)
+        with mock.patch.dict(
+            "os.environ", {"GROK_DOCKER_PROXY_HOST": "host.docker.internal"}, clear=False
+        ):
+            self.assertEqual(
+                gr.get_proxies()["http"],
+                f"http://{session_id}@host.docker.internal:1080",
+            )
+
+    def test_camoufox_uses_substituted_sticky_username(self):
+        gr.config["proxy"] = "http://{id}@127.0.0.1:1080"
+        gr.config["sticky_proxy"] = True
+        session_id = gr._ensure_sticky_proxy_for_slot(0)
+        browser_session.configure(
+            get_proxies=gr.get_proxies,
+            is_debug=lambda: False,
+            is_headless=lambda: False,
+            get_locale=lambda: "en-US",
+        )
+        options = browser_session.create_browser_options(unique_profile=False)
+        self.assertEqual(
+            options["proxy"],
+            {"server": "http://127.0.0.1:1080", "username": session_id, "password": ""},
+        )
+
+    def test_start_browser_logs_redacted_sticky_username(self):
+        gr.config["proxy"] = "http://user-{id}:secret@10.0.160.176:1110"
+        gr.config["sticky_proxy"] = True
+        session_id = gr._ensure_sticky_proxy_for_slot(0)
+        logs = []
+        launched = {}
+
+        class FakePage:
+            pass
+
+        class FakeContext:
+            def __init__(self):
+                self.pages = [FakePage()]
+
+            def new_page(self):
+                return FakePage()
+
+            def close(self):
+                pass
+
+        def fake_launch(opts):
+            launched["proxy"] = dict(opts.get("proxy") or {})
+            return FakeContext(), None
+
+        browser_session.configure(
+            get_proxies=gr.get_proxies,
+            is_debug=lambda: False,
+            is_headless=lambda: False,
+            get_locale=lambda: "en-US",
+        )
+        with mock.patch.object(
+            browser_session,
+            "_launch_camoufox_context",
+            side_effect=fake_launch,
+        ):
+            try:
+                browser_session.start_browser(log_callback=logs.append)
+            finally:
+                browser_session.stop_browser(force=True)
+                browser_session.allow_browser_launches()
+        network_lines = [line for line in logs if "网络:" in line]
+        self.assertEqual(len(network_lines), 1)
+        self.assertIn(f"user-{session_id}", network_lines[0])
+        self.assertIn("10.0.160.176:1110", network_lines[0])
+        self.assertIn("***", network_lines[0])
+        self.assertNotIn("secret", network_lines[0])
+        self.assertIn("本地转发 http://127.0.0.1:", network_lines[0])
+        self.assertTrue(str(launched["proxy"].get("server") or "").startswith("http://127.0.0.1:"))
+        self.assertNotIn("username", launched["proxy"])
+        self.assertNotIn("password", launched["proxy"])
+
+    def test_http_route_log_keeps_sticky_username(self):
+        gr.config["proxy"] = "http://user-{id}:secret@10.0.160.176:1110"
+        gr.config["sticky_proxy"] = True
+        session_id = gr._ensure_sticky_proxy_for_slot(0)
+        logs = []
+        gr.reset_network_route_logs()
+        with mock.patch.object(gr, "registration_log", side_effect=logs.append):
+            gr._log_actual_http_route(
+                "GET",
+                "https://www.cloudflare.com/cdn-cgi/trace",
+                proxy=gr.get_proxies()["https"],
+            )
+        self.assertEqual(len(logs), 1)
+        self.assertIn(f"user-{session_id}", logs[0])
+        self.assertIn("***", logs[0])
+        self.assertNotIn("secret", logs[0])
+
+    def test_connectivity_check_replaces_sticky_placeholder(self):
+        seen = []
+
+        def fake_check_proxy(proxy_url, http_get):
+            seen.append(proxy_url)
+            return "代理", True, "ok"
+
+        with mock.patch.object(
+            network_checks, "check_proxy", side_effect=fake_check_proxy
+        ), mock.patch.object(
+            network_checks, "check_xai_signup", return_value=("xAI注册页", True, "ok")
+        ), mock.patch.object(
+            network_checks, "check_email_api", return_value=("邮箱", True, "ok")
+        ), mock.patch.object(
+            network_checks, "check_cpa", return_value=("CPA", True, "ok")
+        ):
+            results = network_checks.run_connectivity_checks(
+                {
+                    "proxy": "http://{id}@127.0.0.1:1080",
+                    "sticky_proxy": True,
+                    "email_provider": "cloudflare",
+                },
+                http_get=mock.Mock(),
+                http_post=mock.Mock(),
+            )
+        self.assertEqual(len(seen), 1)
+        self.assertNotIn("{id}", seen[0])
+        self.assertTrue(seen[0].endswith("@127.0.0.1:1080"))
+        self.assertEqual(current_sticky_proxy_id(), "")
+        probe = results[0]
+        self.assertEqual(probe[0], network_checks.STICKY_PROBE_CHECK_NAME)
+        self.assertTrue(probe[1])
+        session_id = seen[0].split("://", 1)[1].split("@", 1)[0]
+        self.assertIn(session_id, probe[2])
+        self.assertIn("仅启动检查", probe[2])
+
+    def test_connectivity_check_reports_missing_sticky_placeholder(self):
+        with mock.patch.object(
+            network_checks, "check_proxy", return_value=("代理", True, "ok")
+        ), mock.patch.object(
+            network_checks, "check_xai_signup", return_value=("xAI注册页", True, "ok")
+        ), mock.patch.object(
+            network_checks, "check_email_api", return_value=("邮箱", True, "ok")
+        ), mock.patch.object(
+            network_checks, "check_cpa", return_value=("CPA", True, "ok")
+        ):
+            results = network_checks.run_connectivity_checks(
+                {
+                    "proxy": "http://user:pass@127.0.0.1:1080",
+                    "sticky_proxy": True,
+                    "email_provider": "cloudflare",
+                },
+                http_get=mock.Mock(),
+                http_post=mock.Mock(),
+            )
+        self.assertEqual(results[0][0], network_checks.STICKY_PROBE_CHECK_NAME)
+        self.assertIn("没有 {id}", results[0][2])
+
+    def test_worker_threads_get_independent_sticky_ids(self):
+        gr.config["proxy"] = "http://{id}@127.0.0.1:1080"
+        gr.config["sticky_proxy"] = True
+        results = []
+
+        def worker():
+            results.append(gr._ensure_sticky_proxy_for_slot(0))
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(len(results), 2)
+        self.assertTrue(all(results))
+        self.assertEqual(len(set(results)), 2)
+
+    def test_camoufox_username_only_proxy_uses_local_forwarder(self):
+        gr.config["proxy"] = "http://grok-reg-{id}@10.0.160.176:1110"
+        gr.config["sticky_proxy"] = True
+        session_id = gr._ensure_sticky_proxy_for_slot(0)
+        launched = {}
+        logs = []
+
+        class FakePage:
+            pass
+
+        class FakeContext:
+            def __init__(self):
+                self.pages = [FakePage()]
+
+            def close(self):
+                pass
+
+        def fake_launch(opts):
+            launched["proxy"] = dict(opts.get("proxy") or {})
+            return FakeContext(), None
+
+        browser_session.configure(
+            get_proxies=gr.get_proxies,
+            is_debug=lambda: False,
+            is_headless=lambda: False,
+            get_locale=lambda: "en-US",
+        )
+        with mock.patch.object(
+            browser_session,
+            "_launch_camoufox_context",
+            side_effect=fake_launch,
+        ):
+            try:
+                browser_session.start_browser(log_callback=logs.append)
+            finally:
+                browser_session.stop_browser(force=True)
+                browser_session.allow_browser_launches()
+        self.assertTrue(str(launched["proxy"].get("server") or "").startswith("http://127.0.0.1:"))
+        self.assertNotIn("username", launched["proxy"])
+        network_lines = [line for line in logs if "网络:" in line]
+        self.assertEqual(len(network_lines), 1)
+        self.assertIn(f"grok-reg-{session_id}", network_lines[0])
+        self.assertIn("本地转发", network_lines[0])
+
+    def test_camoufox_unauthenticated_proxy_is_not_forwarded(self):
+        launched = {}
+
+        class FakePage:
+            pass
+
+        class FakeContext:
+            def __init__(self):
+                self.pages = [FakePage()]
+
+            def close(self):
+                pass
+
+        def fake_launch(opts):
+            launched["proxy"] = dict(opts.get("proxy") or {})
+            return FakeContext(), None
+
+        browser_session.configure(
+            get_proxies=lambda: {"https": "http://10.0.160.176:1110"},
+            is_debug=lambda: False,
+            is_headless=lambda: False,
+            get_locale=lambda: "en-US",
+        )
+        with mock.patch.object(
+            browser_session,
+            "_launch_camoufox_context",
+            side_effect=fake_launch,
+        ):
+            try:
+                browser_session.start_browser()
+            finally:
+                browser_session.stop_browser(force=True)
+                browser_session.allow_browser_launches()
+        self.assertEqual(launched["proxy"], {"server": "http://10.0.160.176:1110"})
+
+    def test_sticky_session_change_restarts_running_browser(self):
+        gr.config["proxy"] = "http://{id}@127.0.0.1:1080"
+        gr.config["sticky_proxy"] = True
+        browser_session.configure(
+            get_proxies=gr.get_proxies,
+            is_debug=lambda: False,
+            is_headless=lambda: False,
+            get_locale=lambda: "en-US",
+        )
+        first = gr._ensure_sticky_proxy_for_slot(0)
+        browser_session._tls.launch_proxy_url = gr.get_proxies()["https"]
+        with mock.patch.object(
+            browser_session, "active_browser", return_value=object()
+        ), mock.patch.object(gr, "restart_browser") as restart:
+            second = gr._rebind_sticky_proxy_for_account(1)
+        self.assertTrue(first)
+        self.assertTrue(second)
+        self.assertNotEqual(first, second)
+        restart.assert_called_once()
+
+    def test_cloakbrowser_keeps_native_authenticated_proxy(self):
+        launched = {}
+
+        class FakePage:
+            pass
+
+        class FakeContext:
+            def __init__(self):
+                self.pages = [FakePage()]
+
+            def close(self):
+                pass
+
+        def fake_launch(opts):
+            launched["proxy"] = dict(opts.get("proxy") or {})
+            return FakeContext(), None
+
+        browser_session.configure(
+            get_proxies=lambda: {
+                "https": "http://user-{id}:secret@proxy.example.com:8080".replace(
+                    "{id}", "sess01"
+                )
+            },
+            is_debug=lambda: False,
+            is_headless=lambda: False,
+            get_locale=lambda: "en-US",
+            get_engine=lambda: "cloakbrowser",
+        )
+        with mock.patch.object(
+            browser_session,
+            "_launch_cloakbrowser_context",
+            side_effect=fake_launch,
+        ):
+            try:
+                browser_session.start_browser()
+            finally:
+                browser_session.stop_browser(force=True)
+                browser_session.allow_browser_launches()
+        self.assertEqual(
+            launched["proxy"],
+            {
+                "server": "http://proxy.example.com:8080",
+                "username": "user-sess01",
+                "password": "secret",
+            },
+        )
 
 
 if __name__ == "__main__":
