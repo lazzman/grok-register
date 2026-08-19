@@ -142,6 +142,17 @@ class ProxyConfigUpdateTests(unittest.TestCase):
         self.assertIn("mailhub_api_key", result["config"]["_sensitive_keys"])
         save.assert_called_once_with()
 
+    def test_sticky_proxy_switch_and_placeholder_url_are_saved(self):
+        proxy = "http://{id}@127.0.0.1:1080"
+        with patch.object(gr, "load_config"), patch.object(gr, "save_config") as save:
+            result = _apply_config_updates({"proxy": proxy, "sticky_proxy": True})
+
+        self.assertEqual(gr.config["proxy"], proxy)
+        self.assertIs(gr.config["sticky_proxy"], True)
+        self.assertEqual(result["config"]["proxy"], proxy)
+        self.assertIs(result["config"]["sticky_proxy"], True)
+        save.assert_called_once_with()
+
 
 if __name__ == "__main__":
     unittest.main()

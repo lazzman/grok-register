@@ -1,19 +1,25 @@
 """代理地址解析、校验和脱敏。
 
-HTTP 客户端继续使用配置中的完整代理 URL；Camoufox 需要把认证信息拆成
-``server``、``username`` 和 ``password``。容器运行时还会把回环地址映射为
-Docker Host 别名，同时保留原始认证信息。
+HTTP 客户端继续使用配置中的完整代理 URL；Playwright 风格的 proxy dict 会把
+认证拆成 ``server``、``username`` 和 ``password``。Camoufox（Firefox）不能
+稳定发送代理认证，启动浏览器时会再套一层本地转发。容器运行时还会把回环
+地址映射为 Docker Host 别名，同时保留原始认证信息。
 """
 
 from __future__ import annotations
 
 import os
 import re
+import threading
+import uuid
 from urllib.parse import unquote, urlsplit, urlunsplit
 
 
 LOCAL_PROXY_HOSTS = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
 HTTP_PROXY_SCHEMES = frozenset({"http", "https"})
+STICKY_PROXY_PLACEHOLDER = "{id}"
+_STICKY_PROXY_ID_LENGTH = 16
+_sticky_tls = threading.local()
 
 _BAD_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 _AUTHENTICATED_PROXY_IN_TEXT = re.compile(
@@ -99,8 +105,20 @@ def parse_http_proxy_url(proxy_url: str) -> dict[str, str]:
     return result
 
 
-def redact_proxy_url(proxy_url: str) -> str:
-    """Hide proxy userinfo while retaining a useful scheme/host/port display."""
+def _redact_proxy_userinfo(userinfo: str, *, keep_username: bool) -> str:
+    if not keep_username:
+        return "***:***"
+    if ":" not in userinfo:
+        return userinfo
+    username, _password = userinfo.split(":", 1)
+    return f"{username}:***"
+
+
+def redact_proxy_url(proxy_url: str, *, keep_username: bool = False) -> str:
+    """Hide proxy userinfo while retaining a useful scheme/host/port display.
+
+    ``keep_username=True`` 只遮住密码，便于对照粘性会话是否写进了用户名。
+    """
     value = str(proxy_url or "").strip()
     if not value or "@" not in value:
         return value
@@ -109,10 +127,11 @@ def redact_proxy_url(proxy_url: str) -> str:
         parsed = urlsplit(value if has_scheme else f"http://{value}")
         if "@" not in parsed.netloc or not parsed.hostname:
             raise ValueError("missing proxy host")
+        userinfo = parsed.netloc.rsplit("@", 1)[0]
         redacted = urlunsplit(
             (
                 parsed.scheme,
-                f"***:***@{_proxy_host_port(parsed)}",
+                f"{_redact_proxy_userinfo(userinfo, keep_username=keep_username)}@{_proxy_host_port(parsed)}",
                 parsed.path,
                 parsed.query,
                 parsed.fragment,
@@ -123,11 +142,68 @@ def redact_proxy_url(proxy_url: str) -> str:
         return _AUTHENTICATED_PROXY_IN_TEXT.sub(r"\1***:***@", value)
 
 
+def format_proxy_options_for_log(proxy: dict | None) -> str:
+    """把 Playwright/Camoufox 的 proxy dict 格式化成可对照会话的脱敏 URL。"""
+    if not isinstance(proxy, dict):
+        return ""
+    server = str(proxy.get("server") or "").strip()
+    if not server:
+        return ""
+    username = proxy.get("username")
+    password = proxy.get("password")
+    if username is None and password is None:
+        return server
+    parsed = urlsplit(server)
+    host = _proxy_host_port(parsed) if parsed.hostname else server
+    scheme = parsed.scheme or "http"
+    userinfo = str(username or "")
+    if password is not None:
+        userinfo = f"{userinfo}:***"
+    return urlunsplit((scheme, f"{userinfo}@{host}", "", "", ""))
+
+
 def redact_proxy_text(value: object) -> str:
     """Redact authenticated proxy URLs embedded in log or exception text."""
     return _AUTHENTICATED_PROXY_IN_TEXT.sub(
         r"\1***:***@", str(value if value is not None else "")
     )
+
+
+def new_sticky_proxy_id() -> str:
+    """生成一轮注册使用的粘性代理会话 id（URL 安全的十六进制）。"""
+    return uuid.uuid4().hex[:_STICKY_PROXY_ID_LENGTH]
+
+
+def apply_sticky_proxy_id(proxy_url: str, session_id: str) -> str:
+    """把代理地址中的 ``{id}`` 替换为本次会话值；没有占位符时原样返回。"""
+    value = str(proxy_url or "")
+    sid = str(session_id or "").strip()
+    if not value or not sid or STICKY_PROXY_PLACEHOLDER not in value:
+        return value
+    return value.replace(STICKY_PROXY_PLACEHOLDER, sid)
+
+
+def bind_sticky_proxy_session(session_id: str | None = None, *, slot: int | None = None) -> str:
+    """绑定当前线程的粘性代理会话，供本轮浏览器与 HTTP 请求共用。"""
+    sid = str(session_id or "").strip() or new_sticky_proxy_id()
+    _sticky_tls.session_id = sid
+    if slot is not None:
+        _sticky_tls.slot = int(slot)
+    return sid
+
+
+def current_sticky_proxy_id() -> str:
+    return str(getattr(_sticky_tls, "session_id", "") or "")
+
+
+def current_sticky_proxy_slot() -> int | None:
+    slot = getattr(_sticky_tls, "slot", None)
+    return None if slot is None else int(slot)
+
+
+def clear_sticky_proxy_session() -> None:
+    _sticky_tls.session_id = ""
+    _sticky_tls.slot = None
 
 
 def resolve_proxy_url(proxy_url: str) -> str:

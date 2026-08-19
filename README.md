@@ -240,7 +240,8 @@ Windows 启动：
 | `register_count` | 注册数量 |
 | `register_workers` | 并发数量，默认 1 |
 | `mailhub_api_base` / `mailhub_api_key` | Mail Hub OTP 的服务根地址与 API Key；可选 `mailhub_session_ttl_seconds`、验证码正则和邮件筛选提示 |
-| `proxy` | 注册和 OAuth 请求使用的 HTTP(S) 代理；支持 `http://host:port` 和 `http://user:password@host:port`，凭据中的特殊字符需使用 URL 百分号编码。注册风控会记录浏览器识别到的出口 IP；下次若仍是该 IP，会重启浏览器换出口后再注册。风控名单在「账号中心 → 出口 IP 风控」查看，单账号出口 IP 在「账号中心 → 账号管理 → 查看」详情中 |
+| `proxy` | 注册和 OAuth 请求使用的 HTTP(S) 代理；支持 `http://host:port` 和 `http://user:password@host:port`，凭据中的特殊字符需使用 URL 百分号编码。可在用户名等位置写入 `{id}`，配合 `sticky_proxy` 使用。Camoufox（Firefox）不能直接发送代理用户名/密码，启动时会在本机 `127.0.0.1` 做认证转发。注册风控会记录浏览器识别到的出口 IP；下次若仍是该 IP，会重启浏览器换出口后再注册。风控名单在「账号中心 → 出口 IP 风控」查看，单账号出口 IP 在「账号中心 → 账号管理 → 查看」详情中 |
+| `sticky_proxy` | 粘性代理开关，默认关闭。开启后每轮注册会把 `proxy` 中的 `{id}` 替换为唯一会话值，同一账号的浏览器与 OAuth 请求共用 |
 | `browser_engine` | 浏览器后端：`camoufox`（默认）或 `cloakbrowser` |
 | `browser_headless` | 本机无头模式；Docker 中强制关闭 |
 | `browser_low_traffic_mode` | 低流量注册模式，默认开启；复用静态资源缓存并跳过非注册必需资源 |

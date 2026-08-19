@@ -46,7 +46,16 @@ from backend.automation import session as _bs
 from backend.registration import signup_flow as _rf
 from backend.integrations import network_checks as _conn
 from backend.registration.store import RegistrationRepository
-from backend.integrations.proxy import redact_proxy_text, redact_proxy_url, resolve_proxy_url
+from backend.integrations.proxy import (
+    STICKY_PROXY_PLACEHOLDER,
+    apply_sticky_proxy_id,
+    bind_sticky_proxy_session,
+    current_sticky_proxy_id,
+    current_sticky_proxy_slot,
+    redact_proxy_text,
+    redact_proxy_url,
+    resolve_proxy_url,
+)
 from backend.shared.paths import DATA_ROOT, PROJECT_ROOT
 from backend.automation.session import (
     browser,
@@ -57,6 +66,7 @@ from backend.automation.session import (
     start_browser,
     stop_browser,
     restart_browser,
+    browser_proxy_needs_refresh,
     cleanup_runtime_memory,
     refresh_active_page,
     extract_cf_clearance_and_ua,
@@ -328,6 +338,7 @@ DEFAULT_CONFIG = {
     "outlookemail_pick_mode": "random",
     "outlookemail_disable_after_cpa_success": False,
     "proxy": "http://127.0.0.1:7890",
+    "sticky_proxy": False,
     "enable_nsfw": True,
     "debug_mode": False,
     "browser_engine": _bs.normalize_browser_engine(
@@ -899,8 +910,47 @@ EXTENSION_PATH = ""
 DUCKMAIL_API_BASE_DEFAULT = duckmail_provider.API_BASE_DEFAULT
 
 
+def _sticky_proxy_enabled() -> bool:
+    return bool(config.get("sticky_proxy")) and STICKY_PROXY_PLACEHOLDER in str(
+        config.get("proxy") or ""
+    )
+
+
+def _runtime_proxy_url() -> str:
+    """解析当前线程实际使用的代理；粘性模式会替换 ``{id}``。"""
+    raw = str(config.get("proxy") or "").strip()
+    if _sticky_proxy_enabled():
+        session_id = current_sticky_proxy_id() or bind_sticky_proxy_session()
+        raw = apply_sticky_proxy_id(raw, session_id)
+    return resolve_proxy_url(raw)
+
+
+def _ensure_sticky_proxy_for_slot(slot: int, log_callback=None) -> str:
+    """按账号槽位绑定粘性代理会话；同一槽位重试复用，下一个账号换新值。"""
+    if not _sticky_proxy_enabled():
+        return ""
+    slot = int(slot)
+    session_id = current_sticky_proxy_id()
+    if current_sticky_proxy_slot() == slot and session_id:
+        return session_id
+    session_id = bind_sticky_proxy_session(slot=slot)
+    if log_callback:
+        log_callback(f"[*] 粘性代理会话: {session_id}")
+    return session_id
+
+
+def _rebind_sticky_proxy_for_account(slot: int, log_callback=None) -> str:
+    """绑定本轮账号的粘性会话；会话值变了且浏览器已启动时重启浏览器。"""
+    session_id = _ensure_sticky_proxy_for_slot(slot, log_callback)
+    if session_id and browser_proxy_needs_refresh():
+        if log_callback:
+            log_callback("[*] 粘性代理会话已更换，正在重启浏览器")
+        restart_browser(log_callback=log_callback)
+    return session_id
+
+
 def get_proxies():
-    proxy = resolve_proxy_url(config.get("proxy", ""))
+    proxy = _runtime_proxy_url()
     if proxy:
         return {"http": proxy, "https": proxy}
     return {}
@@ -928,7 +978,11 @@ def _log_actual_http_route(method, url, *, proxies=None, proxy=""):
             or proxies.get("http")
             or ""
         ).strip()
-    route = f"代理 {redact_proxy_url(proxy_value)}" if proxy_value else "直连（不使用代理）"
+    route = (
+        f"代理 {redact_proxy_url(proxy_value, keep_username=_sticky_proxy_enabled())}"
+        if proxy_value
+        else "直连（不使用代理）"
+    )
     key = (str(method or "GET").upper(), display_url, route)
     with _network_route_log_lock:
         if key in _network_route_log_keys:
@@ -1492,7 +1546,7 @@ def _normalize_sso_token(raw_token):
 
 def _resolve_cpa_proxy():
     """CPA 换 token 用的代理：优先 config.proxy，其次环境变量，否则直连。"""
-    proxy = resolve_proxy_url(config.get("proxy", ""))
+    proxy = _runtime_proxy_url()
     if proxy:
         return proxy
     for key in ("https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"):
@@ -3096,6 +3150,11 @@ def run_registration(count):
     accounts_output_file = ""  # 已改为按邮箱单独保存，不再使用批量文件
     workers = max(1, min(int(config.get("register_workers", 1) or 1), 8, int(count or 1)))
     registration_log(f"[*] Web 任务启动，目标数量: {count} | 并发: {workers}")
+    if config.get("sticky_proxy"):
+        if _sticky_proxy_enabled():
+            registration_log("[*] 粘性代理: 开，每轮注册替换代理地址中的 {id}")
+        else:
+            registration_log("[!] 粘性代理已开启，但代理地址中没有 {id}，本轮不会替换")
     _interval_raw = str(config.get("account_interval", "0") or "0").strip()
     if _interval_raw and _interval_raw != "0":
         registration_log(f"[*] 账号间注册间隔: {_interval_raw}s")
@@ -3204,6 +3263,9 @@ def run_registration(count):
             try:
                 boot_started_at = time.time()
                 try:
+                    _ensure_sticky_proxy_for_slot(
+                        0, lambda m: registration_log(f"[W{wid+1}] {m}")
+                    )
                     start_browser(
                         log_callback=lambda m: registration_log(f"[W{wid+1}] {m}"),
                         cancel_callback=controller.should_stop,
@@ -3231,6 +3293,9 @@ def run_registration(count):
                 i = 0
                 retry = 0
                 while i < n and not controller.should_stop():
+                    _rebind_sticky_proxy_for_account(
+                        i, lambda m: registration_log(f"[W{wid+1}] {m}")
+                    )
                     attempt_started_at = time.time()
                     email = ""
                     profile = {}
@@ -3500,6 +3565,7 @@ def run_registration(count):
     try:
         boot_started_at = time.time()
         try:
+            _ensure_sticky_proxy_for_slot(0, registration_log)
             start_browser(log_callback=registration_log, cancel_callback=controller.should_stop)
         except Exception as boot_exc:
             if controller.should_stop():
@@ -3525,6 +3591,7 @@ def run_registration(count):
         while i < count:
             if controller.should_stop():
                 break
+            _rebind_sticky_proxy_for_account(i, registration_log)
             registration_log(f"--- 开始第 {i + 1}/{count} 个账号 ---")
             attempt_started_at = time.time()
             email = ""

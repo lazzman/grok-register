@@ -11,11 +11,18 @@ from typing import Callable, List, Tuple
 from urllib.parse import urlparse
 
 from backend.mailbox import cloudflare_worker as cloudflare_provider
-from backend.integrations.proxy import redact_proxy_text, resolve_proxy_url
+from backend.integrations.proxy import (
+    STICKY_PROXY_PLACEHOLDER,
+    apply_sticky_proxy_id,
+    new_sticky_proxy_id,
+    redact_proxy_text,
+    resolve_proxy_url,
+)
 from backend.shared.paths import resolve_project_path
 
 CheckResult = Tuple[str, bool, str]  # name, ok, detail
 XAI_SIGNUP_CHECK_NAME = "xAI注册页"
+STICKY_PROBE_CHECK_NAME = "粘性代理探测"
 XAI_SIGNUP_URL = "https://accounts.x.ai/sign-up?redirect=grok-com"
 
 
@@ -380,7 +387,27 @@ def check_cpa(config: dict, http_get: Callable) -> CheckResult:
 
 def run_connectivity_checks(config: dict, http_get: Callable, http_post: Callable) -> List[CheckResult]:
     results = []
-    proxy = resolve_proxy_url(config.get("proxy", ""))
+    proxy_raw = str(config.get("proxy") or "").strip()
+    if config.get("sticky_proxy"):
+        if STICKY_PROXY_PLACEHOLDER in proxy_raw:
+            probe_session_id = new_sticky_proxy_id()
+            proxy_raw = apply_sticky_proxy_id(proxy_raw, probe_session_id)
+            results.append(
+                (
+                    STICKY_PROBE_CHECK_NAME,
+                    True,
+                    f"会话 {probe_session_id}（仅启动检查，与后面注册会话不是同一个）",
+                )
+            )
+        else:
+            results.append(
+                (
+                    STICKY_PROBE_CHECK_NAME,
+                    True,
+                    "已开启，但代理地址中没有 {id}，探测不会替换",
+                )
+            )
+    proxy = resolve_proxy_url(proxy_raw)
     results.append(check_proxy(proxy, http_get))
     results.append(check_xai_signup(proxy, http_get))
     results.append(
