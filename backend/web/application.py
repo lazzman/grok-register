@@ -677,6 +677,87 @@ def _find_account_grok2api_files(
     return found
 
 
+def _import_account_grok2api(
+    store: Any,
+    config: Dict[str, Any],
+    record: Dict[str, Any],
+    client: Any,
+) -> Dict[str, Any]:
+    """导入一个账号的 Grok2API JSON，并更新远程入库状态。"""
+    from backend.integrations.grok2api_client import Grok2APIImportError
+
+    account_id = int(record.get("id") or 0)
+    paths = _find_account_grok2api_files(record, config)
+    if not paths:
+        raise FileNotFoundError("未找到该账号对应的 Grok2API JSON")
+
+    results: Dict[str, Any] = {}
+    errors: Dict[str, str] = {}
+    for format_name, path in paths.items():
+        try:
+            results[format_name] = client.import_auth_file(
+                path, format_name=format_name
+            )
+        except Grok2APIImportError as exc:
+            errors[format_name] = str(exc)
+
+    if not results:
+        error_text = "; ".join(
+            f"{name}: {error}" for name, error in errors.items()
+        )
+        store.update_remote_import_status(
+            account_id,
+            "grok2api",
+            status="failed",
+            error=error_text,
+        )
+        raise Grok2APIImportError(error_text or "Grok2API 导入失败")
+
+    sync_failed = sum(
+        int(result.get("syncFailed", 0) or 0) for result in results.values()
+    )
+    import_status = "partial" if errors or sync_failed else "success"
+    import_errors = [f"{name}: {error}" for name, error in errors.items()]
+    if sync_failed:
+        import_errors.append(f"远程同步失败 {sync_failed} 个")
+    store.update_remote_import_status(
+        account_id,
+        "grok2api",
+        status=import_status,
+        error="; ".join(import_errors),
+    )
+    refreshed_rows = store.get_results_by_ids([account_id])
+    refreshed = refreshed_rows[0] if refreshed_rows else record
+    grokiq_notification: Dict[str, Any] = {"queued": False}
+    if "grok_build" in results:
+        try:
+            event = grokiq.enqueue_imported_account(store, refreshed, config)
+            grokiq_notification = {
+                "queued": bool(event),
+                "eventId": str((event or {}).get("event_id") or ""),
+            }
+        except Exception as exc:
+            grokiq_notification = {"queued": False, "error": str(exc)}
+    return {
+        "result": {
+            "formats": results,
+            "errors": errors,
+            "created": sum(
+                int(result.get("created", 0) or 0) for result in results.values()
+            ),
+            "updated": sum(
+                int(result.get("updated", 0) or 0) for result in results.values()
+            ),
+            "synced": sum(
+                int(result.get("synced", 0) or 0) for result in results.values()
+            ),
+            "syncFailed": sync_failed,
+        },
+        "grokiqNotification": grokiq_notification,
+        "record": refreshed,
+    }
+
+
 def _load_account_auth_json(record: Dict[str, Any], raw_config: Dict[str, Any], kind: str) -> Dict[str, Any]:
     path = _find_account_auth_file(record, raw_config, kind)
     try:
@@ -1182,6 +1263,87 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"ok": True, "relogin": status}
 
+    @app.post("/api/accounts/grok2api/import")
+    def api_accounts_grok2api_import(body: AccountIdsBody) -> Dict[str, Any]:
+        """把选中账号已生成的 Grok2API JSON 导入配置的远程服务。"""
+        from backend.integrations.grok2api_client import (
+            Grok2APIClient,
+            Grok2APIImportError,
+        )
+
+        ids = _batch_account_ids(body.ids)
+        gr = _gr()
+        gr.load_config()
+        if not Grok2APIClient.is_configured(gr.config):
+            raise HTTPException(
+                status_code=400,
+                detail="请先在系统设置完整配置 Grok2API API 地址、管理员账号和密码",
+            )
+        store = gr.get_registration_repository()
+        records = store.get_results_by_ids(ids)
+        records_by_id = {int(record.get("id") or 0): record for record in records}
+        imported = 0
+        skipped = 0
+        failed = 0
+        missing = 0
+        created = 0
+        updated = 0
+        synced = 0
+        sync_failed = 0
+        errors: List[Dict[str, Any]] = []
+        try:
+            with Grok2APIClient.from_config(gr.config) as client:
+                client.login()
+                for account_id in ids:
+                    record = records_by_id.get(account_id)
+                    if record is None:
+                        missing += 1
+                        continue
+                    try:
+                        result = _import_account_grok2api(
+                            store, gr.config, record, client
+                        )
+                    except FileNotFoundError:
+                        skipped += 1
+                        continue
+                    except (OSError, ValueError, Grok2APIImportError) as exc:
+                        failed += 1
+                        errors.append(
+                            {
+                                "id": account_id,
+                                "email": str(record.get("email") or ""),
+                                "error": str(exc),
+                            }
+                        )
+                        continue
+                    aggregate = result["result"]
+                    imported += 1
+                    created += int(aggregate.get("created", 0) or 0)
+                    updated += int(aggregate.get("updated", 0) or 0)
+                    synced += int(aggregate.get("synced", 0) or 0)
+                    sync_failed += int(aggregate.get("syncFailed", 0) or 0)
+        except Grok2APIImportError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        if imported == 0 and failed == 0 and missing == len(ids):
+            raise HTTPException(status_code=404, detail="没有匹配的记录")
+        if imported == 0 and failed == 0:
+            raise HTTPException(
+                status_code=404,
+                detail="所选账号均没有可导入的 Grok2API JSON",
+            )
+        return {
+            "ok": True,
+            "imported": imported,
+            "skipped": skipped,
+            "failed": failed,
+            "missing": missing,
+            "created": created,
+            "updated": updated,
+            "synced": synced,
+            "syncFailed": sync_failed,
+            "errors": errors,
+        }
+
     @app.post("/api/accounts/{account_id}/grok2api/import")
     def api_account_grok2api_import(account_id: int) -> Dict[str, Any]:
         """把已生成的三种 Grok2API JSON 导入配置的远程服务。"""
@@ -1202,23 +1364,14 @@ def create_app() -> FastAPI:
                 detail="请先在系统设置完整配置 Grok2API API 地址、管理员账号和密码",
             )
         try:
-            paths = _find_account_grok2api_files(rows[0], gr.config)
+            with Grok2APIClient.from_config(gr.config) as client:
+                imported = _import_account_grok2api(
+                    store, gr.config, rows[0], client
+                )
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         except (OSError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if not paths:
-            raise HTTPException(status_code=404, detail="未找到该账号对应的 Grok2API JSON")
-
-        results: Dict[str, Any] = {}
-        errors: Dict[str, str] = {}
-        try:
-            with Grok2APIClient.from_config(gr.config) as client:
-                for format_name, path in paths.items():
-                    try:
-                        results[format_name] = client.import_auth_file(
-                            path, format_name=format_name
-                        )
-                    except Grok2APIImportError as exc:
-                        errors[format_name] = str(exc)
         except Grok2APIImportError as exc:
             store.update_remote_import_status(
                 account_id,
@@ -1227,57 +1380,12 @@ def create_app() -> FastAPI:
                 error=str(exc),
             )
             raise HTTPException(status_code=502, detail=str(exc)) from exc
-        if not results:
-            error_text = "; ".join(f"{name}: {error}" for name, error in errors.items())
-            store.update_remote_import_status(
-                account_id,
-                "grok2api",
-                status="failed",
-                error=error_text,
-            )
-            raise HTTPException(status_code=502, detail=error_text or "Grok2API 导入失败")
-        sync_failed = sum(
-            int(result.get("syncFailed", 0) or 0) for result in results.values()
-        )
-        import_status = "partial" if errors or sync_failed else "success"
-        import_errors = [f"{name}: {error}" for name, error in errors.items()]
-        if sync_failed:
-            import_errors.append(f"远程同步失败 {sync_failed} 个")
-        store.update_remote_import_status(
-            account_id,
-            "grok2api",
-            status=import_status,
-            error="; ".join(import_errors),
-        )
-        refreshed = store.get_results_by_ids([account_id])[0]
-        grokiq_notification: Dict[str, Any] = {"queued": False}
-        if "grok_build" in results:
-            try:
-                event = grokiq.enqueue_imported_account(
-                    store,
-                    refreshed,
-                    gr.config,
-                )
-                grokiq_notification = {
-                    "queued": bool(event),
-                    "eventId": str((event or {}).get("event_id") or ""),
-                }
-            except Exception as exc:
-                grokiq_notification = {"queued": False, "error": str(exc)}
-        aggregate = {
-            "formats": results,
-            "errors": errors,
-            "created": sum(int(result.get("created", 0) or 0) for result in results.values()),
-            "updated": sum(int(result.get("updated", 0) or 0) for result in results.values()),
-            "synced": sum(int(result.get("synced", 0) or 0) for result in results.values()),
-            "syncFailed": sync_failed,
-        }
         delivery = store.grokiq_deliveries([account_id]).get(account_id)
         return {
             "ok": True,
-            "result": aggregate,
-            "grokiqNotification": grokiq_notification,
-            "item": _serialize_record(refreshed, delivery),
+            "result": imported["result"],
+            "grokiqNotification": imported["grokiqNotification"],
+            "item": _serialize_record(imported["record"], delivery),
         }
 
     @app.get("/api/accounts/{account_id}/failure-screenshot")

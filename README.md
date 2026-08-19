@@ -23,7 +23,7 @@
 - 支持 Cloudflare、DuckMail / Mail.tm、YYDS、MailNest、Mail Hub OTP、OutlookEmail、CloudMail
 - 注册完成后生成 CPA / Grok2API JSON
 - Grok Build 导入成功后可通过持久 Webhook 通知 GrokIQ
-- JSON 查看、复制和下载
+- JSON 查看、复制和下载；账号管理支持批量导入远程 Grok2API
 - 首次访问创建唯一管理员账号
 - Docker Compose 部署，支持无桌面 Linux 服务器
 - GitHub Actions 自动构建 GHCR 镜像
