@@ -89,6 +89,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             GROK_REGISTER_VERSION=${{ steps.app_version.outputs.value }}
+          secrets: |
+            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
