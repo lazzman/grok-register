@@ -2,6 +2,12 @@ import unittest
 from unittest import mock
 
 from backend.integrations.proxy import (
+    apply_sticky_proxy_id,
+    bind_sticky_proxy_session,
+    clear_sticky_proxy_session,
+    current_sticky_proxy_id,
+    current_sticky_proxy_slot,
+    format_proxy_options_for_log,
     parse_http_proxy_url,
     redact_proxy_text,
     redact_proxy_url,
@@ -98,6 +104,75 @@ class HttpProxyParsingTests(unittest.TestCase):
             "failed via http://user:raw/secret@proxy.example.com:8080"
         )
         self.assertNotIn("raw/secret", malformed)
+
+    def test_keep_username_masks_only_password(self):
+        proxy = "http://user-sid-abc123:p%40ss@proxy.example.com:8080"
+        self.assertEqual(
+            redact_proxy_url(proxy, keep_username=True),
+            "http://user-sid-abc123:***@proxy.example.com:8080",
+        )
+        self.assertEqual(
+            redact_proxy_url("http://{id}@127.0.0.1:1080", keep_username=True),
+            "http://{id}@127.0.0.1:1080",
+        )
+
+    def test_camoufox_proxy_options_log_keeps_username(self):
+        self.assertEqual(
+            format_proxy_options_for_log(
+                {
+                    "server": "http://10.0.160.176:1110",
+                    "username": "user-sid-ad1b1e9a32a640aa",
+                    "password": "secret",
+                }
+            ),
+            "http://user-sid-ad1b1e9a32a640aa:***@10.0.160.176:1110",
+        )
+        self.assertEqual(
+            format_proxy_options_for_log({"server": "http://10.0.160.176:1110"}),
+            "http://10.0.160.176:1110",
+        )
+        self.assertEqual(format_proxy_options_for_log({}), "")
+
+
+class StickyProxyTests(unittest.TestCase):
+    def tearDown(self):
+        clear_sticky_proxy_session()
+
+    def test_placeholder_is_replaced_in_username(self):
+        self.assertEqual(
+            apply_sticky_proxy_id("http://{id}@127.0.0.1:1080", "abc123def456"),
+            "http://abc123def456@127.0.0.1:1080",
+        )
+        self.assertEqual(
+            apply_sticky_proxy_id(
+                "http://user-{id}:p%40ss@proxy.example.com:8080", "sess01"
+            ),
+            "http://user-sess01:p%40ss@proxy.example.com:8080",
+        )
+
+    def test_missing_placeholder_or_session_keeps_original_url(self):
+        proxy = "http://user:pass@127.0.0.1:1080"
+        self.assertEqual(apply_sticky_proxy_id(proxy, "abc123"), proxy)
+        self.assertEqual(
+            apply_sticky_proxy_id("http://{id}@127.0.0.1:1080", ""),
+            "http://{id}@127.0.0.1:1080",
+        )
+
+    def test_template_proxy_url_is_valid_before_substitution(self):
+        proxy = "http://{id}@127.0.0.1:1080"
+        self.assertEqual(validate_http_proxy_url(proxy), proxy)
+        parsed = parse_http_proxy_url(proxy)
+        self.assertEqual(parsed["server"], "http://127.0.0.1:1080")
+        self.assertEqual(parsed["username"], "{id}")
+
+    def test_bind_session_is_thread_local_and_can_track_slot(self):
+        first = bind_sticky_proxy_session("alpha", slot=0)
+        self.assertEqual(first, "alpha")
+        self.assertEqual(current_sticky_proxy_id(), "alpha")
+        self.assertEqual(current_sticky_proxy_slot(), 0)
+        clear_sticky_proxy_session()
+        self.assertEqual(current_sticky_proxy_id(), "")
+        self.assertIsNone(current_sticky_proxy_slot())
 
 
 if __name__ == "__main__":
