@@ -27,7 +27,7 @@
 - 注册完成后生成 CPA / Grok2API JSON
 - 上游已不再下发 `bfs`，本项目不能判断账号是否风控；必须联动 [GrokIQ](https://github.com/kaibush/grok-iq) 做账号级降智检测和自动隔离
 - Grok Build 导入成功后通过持久 Webhook 通知 GrokIQ，由 GrokIQ 自动探针并隔离异常账号
-- JSON 查看、复制和下载
+- JSON 查看、复制和下载；账号管理支持批量导入远程 Grok2API
 - 首次访问创建唯一管理员账号
 - Docker Compose 部署，支持无桌面 Linux 服务器
 - GitHub Actions 自动构建 GHCR 镜像
