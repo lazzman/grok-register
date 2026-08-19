@@ -1,4 +1,4 @@
-import { Archive, ChevronDown, ListChecks, Loader2, LogIn, ShieldCheck, Trash2 } from "lucide-react";
+import { Archive, ChevronDown, ListChecks, Loader2, LogIn, ShieldCheck, Trash2, UploadCloud } from "lucide-react";
 import { Button } from "@/components/ui";
 
 export function AccountBatchActions({
@@ -8,9 +8,11 @@ export function AccountBatchActions({
   reloginRunning,
   ssoCheckRunning,
   taskConflict,
+  grok2apiConfigured,
   onToggleMenu,
   onCloseMenu,
   onExport,
+  onImportGrok2API,
   onRelogin,
   onSsoCheck,
   onDelete,
@@ -21,9 +23,11 @@ export function AccountBatchActions({
   reloginRunning: boolean;
   ssoCheckRunning: boolean;
   taskConflict: boolean;
+  grok2apiConfigured: boolean;
   onToggleMenu: () => void;
   onCloseMenu: () => void;
   onExport: (kind: "cpa" | "grok2api") => void;
+  onImportGrok2API: () => void;
   onRelogin: () => void;
   onSsoCheck: () => void;
   onDelete: () => void;
@@ -57,7 +61,7 @@ export function AccountBatchActions({
           />
           <div
             role="menu"
-            className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-64 rounded-lg border bg-card p-2 shadow-2xl"
+            className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-72 rounded-lg border bg-card p-2 shadow-2xl"
           >
             <button
               type="button"
@@ -86,6 +90,17 @@ export function AccountBatchActions({
             >
               <Archive className="h-4 w-4" aria-hidden="true" />
               导出 Grok2API JSON 压缩包
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-45"
+              disabled={!grok2apiConfigured}
+              title={!grok2apiConfigured ? "请先在系统设置完整配置 Grok2API" : undefined}
+              onClick={onImportGrok2API}
+            >
+              <UploadCloud className="h-4 w-4" aria-hidden="true" />
+              导入到 Grok2API
             </button>
             <button
               type="button"
