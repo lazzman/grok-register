@@ -753,7 +753,7 @@ export function AccountsPage() {
   // 本次是否真的观察到运行中。用 ref 而非闭包变量：StrictMode 下 effect 会重建。
   const sawRunningRef = useRef(false);
   const [batchMenuOpen, setBatchMenuOpen] = useState(false);
-  const [batchBusy, setBatchBusy] = useState<"" | "export-cpa" | "export-grok2api" | "relogin" | "sso-check">("");
+  const [batchBusy, setBatchBusy] = useState<"" | "export-cpa" | "export-grok2api" | "import-grok2api" | "relogin" | "sso-check">("");
   const [deleteDialog, setDeleteDialog] = useState<{ ids: number[]; email: string } | null>(null);
   const [deleteBusy, setDeleteBusy] = useState<"" | "files" | "database">("");
   const [grok2apiImportingId, setGrok2apiImportingId] = useState<number | null>(null);
@@ -999,6 +999,9 @@ export function AccountsPage() {
     startAuthDownload(detail.id, kind);
   };
 
+  const grok2apiConfigured =
+    items.length === 0 || items.some((item) => item.grok2api_remote_configured);
+
   const onBatchExport = async (kind: "cpa" | "grok2api") => {
     if (!selectedIds.length) return;
     setBatchMenuOpen(false);
@@ -1039,6 +1042,36 @@ export function AccountsPage() {
       await appendReloginHistory(next);
     }
     await load();
+  };
+
+  const onBatchImportGrok2API = async () => {
+    if (!selectedIds.length) return;
+    if (
+      !window.confirm(
+        `将选中的 ${selectedIds.length} 个账号导入到远程 Grok2API？缺少授权文件的账号会被跳过。`
+      )
+    ) return;
+    setBatchMenuOpen(false);
+    setBatchBusy("import-grok2api");
+    try {
+      const result = await api.importAccountsToGrok2API(selectedIds);
+      const parts = [`成功 ${result.imported}`];
+      if (result.skipped) parts.push(`跳过 ${result.skipped}`);
+      if (result.failed) parts.push(`失败 ${result.failed}`);
+      if (result.missing) parts.push(`缺失 ${result.missing}`);
+      const suffix = result.imported
+        ? `（新增 ${result.created || 0}，更新 ${result.updated || 0}）`
+        : "";
+      showToast(
+        `Grok2API 批量导入完成：${parts.join("，")}${suffix}`,
+        result.failed || result.syncFailed ? "error" : "success"
+      );
+      await load(page, pageSize);
+    } catch (err: any) {
+      showToast(err.message || "批量导入 Grok2API 失败", "error");
+    } finally {
+      setBatchBusy("");
+    }
   };
 
   const onBatchRelogin = async () => {
@@ -1230,7 +1263,7 @@ export function AccountsPage() {
             type="button"
             role="menuitem"
             className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-45"
-            disabled={importing || !item.grok2api_auth_available}
+            disabled={importing || batchBusy === "import-grok2api" || !item.grok2api_auth_available}
             title={!item.grok2api_auth_available ? "Grok2API JSON 文件不存在" : undefined}
             onClick={() => {
               setMoreMenu(null);
@@ -1271,7 +1304,7 @@ export function AccountsPage() {
     <div className="space-y-5 sm:space-y-6">
       <PageHeader
         title="账号管理"
-        description="集中筛选账号、查看注册与授权状态；选中账号后可批量风控检查、重新登录、导出或删除。"
+        description="集中筛选账号、查看注册与授权状态；选中账号后可批量风控检查、导入 Grok2API、重新登录、导出或删除。"
       />
 
       {relogin?.running ? (
@@ -1421,7 +1454,7 @@ export function AccountsPage() {
             onTogglePage={toggleAll}
             onSelectAll={() => void selectAllFiltered()}
             onClear={clearSelection}
-            actions={<><Button size="sm" variant="outline" onClick={() => void load(page, pageSize)} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />刷新</Button><AccountBatchActions selectedCount={selectedIds.length} busy={!!batchBusy} menuOpen={batchMenuOpen} reloginRunning={!!relogin?.running} ssoCheckRunning={ssoCheckRunning || batchBusy === "sso-check"} taskConflict={!!relogin?.running || ssoCheckRunning} onToggleMenu={() => setBatchMenuOpen((open) => !open)} onCloseMenu={() => setBatchMenuOpen(false)} onExport={(kind) => void onBatchExport(kind)} onRelogin={() => void onBatchRelogin()} onSsoCheck={() => void onBatchSsoCheck()} onDelete={() => { setBatchMenuOpen(false); openDeleteDialog(selectedIds); }} /></>}
+            actions={<><Button size="sm" variant="outline" onClick={() => void load(page, pageSize)} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />刷新</Button><AccountBatchActions selectedCount={selectedIds.length} busy={!!batchBusy} menuOpen={batchMenuOpen} reloginRunning={!!relogin?.running} ssoCheckRunning={ssoCheckRunning || batchBusy === "sso-check"} taskConflict={!!relogin?.running || ssoCheckRunning} grok2apiConfigured={grok2apiConfigured} onToggleMenu={() => setBatchMenuOpen((open) => !open)} onCloseMenu={() => setBatchMenuOpen(false)} onExport={(kind) => void onBatchExport(kind)} onImportGrok2API={() => void onBatchImportGrok2API()} onRelogin={() => void onBatchRelogin()} onSsoCheck={() => void onBatchSsoCheck()} onDelete={() => { setBatchMenuOpen(false); openDeleteDialog(selectedIds); }} /></>}
           />
           <CardContent className="p-0">
             {items.length === 0 ? (

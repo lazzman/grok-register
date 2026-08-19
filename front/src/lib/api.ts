@@ -457,6 +457,22 @@ export const api = {
       result: { created?: number; updated?: number; synced?: number; syncFailed?: number };
       item: AccountRecord;
     }>(`/api/accounts/${id}/grok2api/import`, { method: "POST" }),
+  importAccountsToGrok2API: (ids: number[]) =>
+    request<{
+      ok: boolean;
+      imported: number;
+      skipped: number;
+      failed: number;
+      missing: number;
+      created: number;
+      updated: number;
+      synced: number;
+      syncFailed: number;
+      errors: { id: number; email: string; error: string }[];
+    }>("/api/accounts/grok2api/import", {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    }),
   deleteAccounts: (ids: number[], deleteFiles = true) =>
     request<{ ok: boolean; deleted: number; deleted_files: number; side_lines: number; file_errors: string[] }>(
       "/api/accounts/delete",
