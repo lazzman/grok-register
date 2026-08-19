@@ -20,13 +20,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 COPY requirements.txt ./
+COPY docker/install_camoufox.py ./install_camoufox.py
 RUN python3 -m venv /opt/venv \
     && pip install --upgrade pip \
     && pip install -r requirements.txt
 
-# 浏览器引擎直接内置到镜像，容器首次启动时不再临时下载。
-RUN python -m camoufox fetch \
-    && python -m camoufox version
+# 浏览器引擎直接内置到镜像。不用 `camoufox fetch` CLI：它在失败时仍返回 0。
+RUN --mount=type=secret,id=GITHUB_TOKEN,required=false \
+    sh -c 'if [ -f /run/secrets/GITHUB_TOKEN ]; then export GITHUB_TOKEN="$(cat /run/secrets/GITHUB_TOKEN)"; fi; \
+    python install_camoufox.py'
 
 FROM ubuntu:24.04 AS runtime
 ARG DEBIAN_FRONTEND=noninteractive

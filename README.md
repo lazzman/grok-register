@@ -347,10 +347,14 @@ docker compose restart grok-register
 
 ### Camoufox 未安装
 
+本机：
+
 ```bash
 .venv/bin/python -m camoufox fetch
 .venv/bin/python -m camoufox version
 ```
+
+Docker / GHCR 报 `official/stable is not installed` 时，说明镜像里没有浏览器内核，需要重新构建镜像（见 [`DEPLOYMENT.md`](DEPLOYMENT.md)）。
 
 ### CloakBrowser 首次启动
 
