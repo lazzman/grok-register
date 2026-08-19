@@ -70,6 +70,11 @@ echo "[docker] 配置: $CONFIG_FILE"
 echo "[docker] 数据: $DATA_DIR"
 echo "[docker] 日志: $LOG_FILE"
 
+if [[ ! -e "${XDG_CACHE_HOME:-/opt/camoufox-cache}/camoufox/.0.5_FLAG" ]]; then
+  echo "[docker] 警告: 镜像内未找到 Camoufox 浏览器内核（official/stable）。" >&2
+  echo "[docker] 注册会在启动浏览器时失败。请重新构建镜像，或在容器内执行: python -m camoufox fetch" >&2
+fi
+
 export HOME=/home/app
 export XDG_CACHE_HOME=${XDG_CACHE_HOME:-/opt/camoufox-cache}
 export CLOAKBROWSER_CACHE_DIR=${CLOAKBROWSER_CACHE_DIR:-${DATA_DIR}/cloakbrowser-cache}
