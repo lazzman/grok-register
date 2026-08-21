@@ -398,6 +398,8 @@ export const api = {
     params: {
       status?: string;
       emailDisableStatus?: string;
+      cpaRemoteStatus?: string;
+      grok2apiRemoteStatus?: string;
       q?: string;
       batchId?: string;
       botRisk?: string;
@@ -408,6 +410,8 @@ export const api = {
     const sp = new URLSearchParams();
     if (params.status) sp.set("status", params.status);
     if (params.emailDisableStatus) sp.set("email_disable_status", params.emailDisableStatus);
+    if (params.cpaRemoteStatus) sp.set("cpa_remote_status", params.cpaRemoteStatus);
+    if (params.grok2apiRemoteStatus) sp.set("grok2api_remote_status", params.grok2apiRemoteStatus);
     if (params.q) sp.set("q", params.q);
     if (params.batchId) sp.set("batch_id", params.batchId);
     if (params.botRisk) sp.set("bot_risk", params.botRisk);
@@ -430,6 +434,8 @@ export const api = {
     params: {
       status?: string;
       emailDisableStatus?: string;
+      cpaRemoteStatus?: string;
+      grok2apiRemoteStatus?: string;
       q?: string;
       batchId?: string;
       botRisk?: string;
@@ -438,6 +444,8 @@ export const api = {
     const sp = new URLSearchParams();
     if (params.status) sp.set("status", params.status);
     if (params.emailDisableStatus) sp.set("email_disable_status", params.emailDisableStatus);
+    if (params.cpaRemoteStatus) sp.set("cpa_remote_status", params.cpaRemoteStatus);
+    if (params.grok2apiRemoteStatus) sp.set("grok2api_remote_status", params.grok2apiRemoteStatus);
     if (params.q) sp.set("q", params.q);
     if (params.batchId) sp.set("batch_id", params.batchId);
     if (params.botRisk) sp.set("bot_risk", params.botRisk);
