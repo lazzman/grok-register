@@ -590,6 +590,8 @@ class RegistrationRepository:
         *,
         status: str = "",
         email_disable_status: str = "",
+        cpa_remote_status: str = "",
+        grok2api_remote_status: str = "",
         keyword: str = "",
         batch_id: str = "",
         bot_risk: str = "",
@@ -604,6 +606,14 @@ class RegistrationRepository:
         if normalized_disable_status:
             clauses.append("email_disable_status = ?")
             params.append(normalized_disable_status)
+        normalized_cpa_remote_status = str(cpa_remote_status or "").strip().lower()
+        if normalized_cpa_remote_status:
+            clauses.append("cpa_remote_status = ?")
+            params.append(normalized_cpa_remote_status)
+        normalized_grok2api_remote_status = str(grok2api_remote_status or "").strip().lower()
+        if normalized_grok2api_remote_status:
+            clauses.append("grok2api_remote_status = ?")
+            params.append(normalized_grok2api_remote_status)
         normalized_batch_id = str(batch_id or "").strip()
         if normalized_batch_id:
             clauses.append("batch_id = ?")
@@ -653,6 +663,8 @@ class RegistrationRepository:
         *,
         status: str = "",
         email_disable_status: str = "",
+        cpa_remote_status: str = "",
+        grok2api_remote_status: str = "",
         keyword: str = "",
         batch_id: str = "",
         bot_risk: str = "",
@@ -662,6 +674,8 @@ class RegistrationRepository:
         where, params = self._result_filters(
             status=status,
             email_disable_status=email_disable_status,
+            cpa_remote_status=cpa_remote_status,
+            grok2api_remote_status=grok2api_remote_status,
             keyword=keyword,
             batch_id=batch_id,
             bot_risk=bot_risk,
@@ -687,6 +701,8 @@ class RegistrationRepository:
         *,
         status: str = "",
         email_disable_status: str = "",
+        cpa_remote_status: str = "",
+        grok2api_remote_status: str = "",
         keyword: str = "",
         batch_id: str = "",
         bot_risk: str = "",
@@ -695,6 +711,8 @@ class RegistrationRepository:
         where, params = self._result_filters(
             status=status,
             email_disable_status=email_disable_status,
+            cpa_remote_status=cpa_remote_status,
+            grok2api_remote_status=grok2api_remote_status,
             keyword=keyword,
             batch_id=batch_id,
             bot_risk=bot_risk,
@@ -710,6 +728,8 @@ class RegistrationRepository:
         *,
         status: str = "",
         email_disable_status: str = "",
+        cpa_remote_status: str = "",
+        grok2api_remote_status: str = "",
         keyword: str = "",
         batch_id: str = "",
         bot_risk: str = "",
@@ -718,6 +738,8 @@ class RegistrationRepository:
         where, params = self._result_filters(
             status=status,
             email_disable_status=email_disable_status,
+            cpa_remote_status=cpa_remote_status,
+            grok2api_remote_status=grok2api_remote_status,
             keyword=keyword,
             batch_id=batch_id,
             bot_risk=bot_risk,

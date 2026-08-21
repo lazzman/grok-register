@@ -234,6 +234,53 @@ class RegistrationRepositoryMigrationTests(unittest.TestCase):
             unknown_rows = store.list_results(bot_risk="unknown")
             self.assertEqual([row["email"] for row in unknown_rows], ["unknown@example.com"])
 
+    def test_remote_import_status_filters(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = RegistrationRepository(Path(tmp) / "results.sqlite3")
+            store.add_result(
+                {
+                    "email": "cpa-ready@example.com",
+                    "status": "success",
+                    "cpa_remote_status": "ready",
+                    "grok2api_remote_status": "not_configured",
+                }
+            )
+            store.add_result(
+                {
+                    "email": "g2a-success@example.com",
+                    "status": "success",
+                    "cpa_remote_status": "not_configured",
+                    "grok2api_remote_status": "success",
+                }
+            )
+            store.add_result(
+                {
+                    "email": "both-failed@example.com",
+                    "status": "success",
+                    "cpa_remote_status": "failed",
+                    "grok2api_remote_status": "failed",
+                }
+            )
+
+            cpa_ready = store.list_results(cpa_remote_status="ready")
+            self.assertEqual([row["email"] for row in cpa_ready], ["cpa-ready@example.com"])
+            self.assertEqual(store.count_results(cpa_remote_status="ready"), 1)
+
+            g2a_ok = store.list_results(grok2api_remote_status="success")
+            self.assertEqual([row["email"] for row in g2a_ok], ["g2a-success@example.com"])
+            self.assertEqual(store.count_results(grok2api_remote_status="success"), 1)
+
+            both_failed = store.list_results(
+                cpa_remote_status="failed",
+                grok2api_remote_status="failed",
+            )
+            self.assertEqual([row["email"] for row in both_failed], ["both-failed@example.com"])
+            expected_ids = [
+                row["id"] for row in store.list_results(cpa_remote_status="failed")
+            ]
+            self.assertEqual(store.list_result_ids(cpa_remote_status="failed"), expected_ids)
+            self.assertEqual(store.count_results(cpa_remote_status="not_configured"), 1)
+
     def test_list_result_ids_matches_filters_and_list_order(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = RegistrationRepository(Path(tmp) / "results.sqlite3")
