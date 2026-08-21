@@ -75,6 +75,7 @@ function remoteImportLabel(status: string) {
     failed: "导入失败",
     ready: "待导入",
     not_configured: "未配置",
+    disabled: "关闭",
   };
   return labels[status] || status || "未配置";
 }
@@ -98,9 +99,19 @@ function importStatusLabel(status: string) {
     failed: "失败",
     ready: "待导入",
     not_configured: "未配置",
+    disabled: "关闭",
   };
   return labels[status] || status || "未知";
 }
+
+const REMOTE_IMPORT_STATUS_OPTIONS = [
+  { value: "not_configured", label: "未配置" },
+  { value: "ready", label: "待导入" },
+  { value: "success", label: "已导入" },
+  { value: "partial", label: "同步异常" },
+  { value: "failed", label: "失败" },
+  { value: "disabled", label: "关闭" },
+] as const;
 
 function grokiqDeliveryLabel(status: string) {
   const labels: Record<string, string> = {
@@ -675,6 +686,8 @@ export function AccountsPage() {
   const [items, setItems] = useState<AccountRecord[]>([]);
   const [status, setStatus] = useState(initialStatus);
   const [emailDisableStatus, setEmailDisableStatus] = useState("");
+  const [cpaRemoteStatus, setCpaRemoteStatus] = useState("");
+  const [grok2apiRemoteStatus, setGrok2apiRemoteStatus] = useState("");
   const [botRiskFilter, setBotRiskFilter] = useState(initialBotRisk);
   const [keyword, setKeyword] = useState(initialKeyword);
   const [batchIdFilter] = useState(initialBatchId);
@@ -733,6 +746,8 @@ export function AccountsPage() {
       const data = await api.accounts({
         status,
         emailDisableStatus,
+        cpaRemoteStatus,
+        grok2apiRemoteStatus,
         q: keyword,
         batchId: batchIdFilter || undefined,
         botRisk: botRiskFilter || undefined,
@@ -885,6 +900,8 @@ export function AccountsPage() {
       const result = await api.accountIds({
         status,
         emailDisableStatus,
+        cpaRemoteStatus,
+        grok2apiRemoteStatus,
         q: keyword,
         batchId: batchIdFilter || undefined,
         botRisk: botRiskFilter || undefined,
@@ -1350,6 +1367,38 @@ export function AccountsPage() {
               <option value="1">异常账号</option>
               <option value="0">正常账号</option>
               <option value="unknown">未检查 / 未知</option>
+            </Select>
+            </div>
+            <div className="w-full sm:w-40"><label htmlFor="account-cpa-import-filter" className="mb-1.5 block text-xs font-medium text-slate-500">CPA 入库</label>
+            <Select
+              id="account-cpa-import-filter"
+              value={cpaRemoteStatus}
+              onChange={(e) => {
+                setCpaRemoteStatus(e.target.value);
+                setSelected({});
+              }}
+              aria-label="按 CPA 入库状态筛选"
+            >
+              <option value="">全部入库状态</option>
+              {REMOTE_IMPORT_STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </Select>
+            </div>
+            <div className="w-full sm:w-40"><label htmlFor="account-grok2api-import-filter" className="mb-1.5 block text-xs font-medium text-slate-500">Grok2API</label>
+            <Select
+              id="account-grok2api-import-filter"
+              value={grok2apiRemoteStatus}
+              onChange={(e) => {
+                setGrok2apiRemoteStatus(e.target.value);
+                setSelected({});
+              }}
+              aria-label="按 Grok2API 导入状态筛选"
+            >
+              <option value="">全部导入状态</option>
+              {REMOTE_IMPORT_STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
             </Select>
             </div>
             <div className="w-full min-w-0 sm:min-w-72 sm:flex-1"><label htmlFor="account-search" className="mb-1.5 block text-xs font-medium text-slate-500">搜索账号</label><div className="relative">

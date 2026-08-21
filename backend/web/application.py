@@ -1021,6 +1021,8 @@ def create_app() -> FastAPI:
     def api_accounts(
         status: str = Query(""),
         email_disable_status: str = Query(""),
+        cpa_remote_status: str = Query(""),
+        grok2api_remote_status: str = Query(""),
         q: str = Query(""),
         keyword: str = Query(""),
         batch_id: str = Query(""),
@@ -1034,9 +1036,13 @@ def create_app() -> FastAPI:
         keyword_norm = str(q or keyword or "").strip()
         batch_norm = str(batch_id or "").strip()
         bot_risk_norm = str(bot_risk or "").strip().lower()
+        cpa_remote_norm = str(cpa_remote_status or "").strip().lower()
+        grok2api_remote_norm = str(grok2api_remote_status or "").strip().lower()
         rows = store.list_results(
             status=status_norm,
             email_disable_status=str(email_disable_status or "").strip().lower(),
+            cpa_remote_status=cpa_remote_norm,
+            grok2api_remote_status=grok2api_remote_norm,
             keyword=keyword_norm,
             batch_id=batch_norm,
             bot_risk=bot_risk_norm,
@@ -1046,6 +1052,8 @@ def create_app() -> FastAPI:
         total = store.count_results(
             status=status_norm,
             email_disable_status=str(email_disable_status or "").strip().lower(),
+            cpa_remote_status=cpa_remote_norm,
+            grok2api_remote_status=grok2api_remote_norm,
             keyword=keyword_norm,
             batch_id=batch_norm,
             bot_risk=bot_risk_norm,
@@ -1077,6 +1085,8 @@ def create_app() -> FastAPI:
     def api_account_select_ids(
         status: str = Query(""),
         email_disable_status: str = Query(""),
+        cpa_remote_status: str = Query(""),
+        grok2api_remote_status: str = Query(""),
         q: str = Query(""),
         keyword: str = Query(""),
         batch_id: str = Query(""),
@@ -1086,6 +1096,8 @@ def create_app() -> FastAPI:
         ids = store.list_result_ids(
             status=str(status or "").strip().lower(),
             email_disable_status=str(email_disable_status or "").strip().lower(),
+            cpa_remote_status=str(cpa_remote_status or "").strip().lower(),
+            grok2api_remote_status=str(grok2api_remote_status or "").strip().lower(),
             keyword=str(q or keyword or "").strip(),
             batch_id=str(batch_id or "").strip(),
             bot_risk=str(bot_risk or "").strip().lower(),
