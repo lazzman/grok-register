@@ -183,6 +183,7 @@ class SignupFlowTests(unittest.TestCase):
         fill_code.assert_called_once_with("134771")
 
 
+
 class _SignupPage:
     def __init__(self, error=None, url="https://accounts.x.ai/sign-up?redirect=grok-com"):
         self.error = error
@@ -313,6 +314,7 @@ class SignupNavigationTests(unittest.TestCase):
 
         click_email.assert_not_called()
         self.assertTrue(any("跳过「使用邮箱注册」按钮" in message for message in logs))
+
 
 
 if __name__ == "__main__":
