@@ -806,7 +806,7 @@ export function SettingsPage({ section = "registration" }: { section?: SettingsS
               />
               <ToggleRow
                 title="低流量模式"
-                description="注册和重新登录共用静态资源缓存，并跳过非必需媒体。默认较少节省只缓存 grok.com CDN；更多节省会缓存 accounts.x.ai 哈希资源，但自动跳过 Castle / Mixpanel / Turnstile 等高风险 JS 回放"
+                description="注册和重新登录共用静态资源缓存，并跳过非必需媒体。默认较少节省只缓存 grok.com CDN；更多节省会缓存 accounts.x.ai 哈希资源，但自动跳过 Castle / Mixpanel / Turnstile 等高风险 JS 回放。不拦截注册页文档，避免代理超时"
                 checked={!!config.browser_low_traffic_mode}
                 onCheckedChange={(value) => setField("browser_low_traffic_mode", value)}
               />

@@ -224,7 +224,7 @@ Windows 启动：
 | `proxy` | 注册和 OAuth 请求使用的 HTTP(S) 代理；支持 `http://host:port` 和 `http://user:password@host:port`，凭据中的特殊字符需使用 URL 百分号编码。注册风控会记录浏览器识别到的出口 IP；下次若仍是该 IP，会重启浏览器换出口后再注册。风控名单在「账号中心 → 出口 IP 风控」查看，单账号出口 IP 在「账号中心 → 账号管理 → 查看」详情中 |
 | `browser_engine` | 浏览器后端：`camoufox`（默认）或 `cloakbrowser` |
 | `browser_headless` | 本机无头模式；Docker 中强制关闭 |
-| `browser_low_traffic_mode` | 低流量模式，默认开启；注册和重新登录共用静态资源缓存并跳过非必需资源。设置页可查看当前缓存并一键清空；清空后下次打开注册页或重新登录页会自动重新下载 |
+| `browser_low_traffic_mode` | 低流量模式，默认开启；注册和重新登录共用静态资源缓存并跳过非必需资源。只拦截 grok.com 静态资源/媒体，以及更多节省下的 accounts.x.ai `/_next/static/` 哈希资源；注册页文档、API 和 Cloudflare 挑战走浏览器原生网络，避免打开注册页被 Playwright 路由拖到超时。设置页可查看当前缓存并一键清空；清空后下次打开注册页或重新登录页会自动重新下载 |
 | `browser_traffic_savings_level` | 低流量模式下的节省级别，默认 `standard`（较少节省，仅缓存 grok.com CDN，账号质量更稳）；`more` 额外缓存 accounts.x.ai 哈希静态资源，但会扫描缓存内容并跳过 Castle / Mixpanel / Turnstile / 性能埋点等高风险 JS 回放。设置页会标出每个缓存文件的风险原因 |
 | `cpa_auto_add` | 注册后生成 CPA 授权 |
 | `sso_detailed_risk_check` | 获取 SSO 后尝试读取账号页 `botFlagSource`。上游已不再稳定下发 `bfs` / `botFlag`，该检查不能作为风控结论；账号级降智检测请用 GrokIQ |
