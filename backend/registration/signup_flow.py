@@ -526,7 +526,8 @@ def open_signup_page(log_callback=None, cancel_callback=None):
         )
         navigation_error = ""
         try:
-            # 完整 load 会被慢代理或第三方资源拖住；注册控件只依赖 DOM 就绪。
+            # 完整 load 会被慢代理、低流量拦截或第三方资源拖住。
+            # 注册控件只依赖 DOM 就绪，与登录页导航保持一致。
             page_obj.get(
                 SIGNUP_URL,
                 wait_until="domcontentloaded",
