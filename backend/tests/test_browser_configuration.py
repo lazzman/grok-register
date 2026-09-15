@@ -284,7 +284,7 @@ class BrowserHeadlessConfigTests(unittest.TestCase):
             )
         )
 
-    def test_low_traffic_routing_uses_native_network_for_uncached_assets(self):
+    def test_low_traffic_routing_fetches_uncached_static_assets(self):
         browser_session.configure(
             is_low_traffic=lambda: True,
             get_traffic_savings_level=lambda: "more",
@@ -296,20 +296,30 @@ class BrowserHeadlessConfigTests(unittest.TestCase):
         self.assertTrue(callable(matcher))
         self.assertFalse(matcher("https://accounts.x.ai/sign-up?redirect=grok-com"))
         self.assertTrue(matcher("https://cdn.grok.com/assets/app.js"))
-        context.on.assert_called()
+        self.assertTrue(matcher("https://accounts.x.ai/_next/static/chunks/app-hash.js"))
+        context.on.assert_not_called()
 
         route = mock.Mock()
+        fetched = mock.Mock(
+            status=200,
+            headers={"content-type": "application/javascript"},
+            body=mock.Mock(return_value=b"bundle"),
+        )
+        route.fetch.return_value = fetched
         request = mock.Mock(
             url="https://cdn.grok.com/assets/app.js",
             resource_type="script",
             method="GET",
             headers={},
         )
-        with mock.patch.object(browser_session, "_cached_response", return_value=None):
+        with mock.patch.object(browser_session, "_cached_response", return_value=None), mock.patch.object(
+            browser_session, "_store_cached_response"
+        ) as store:
             handler(route, request)
-        route.continue_.assert_called_once()
-        route.fetch.assert_not_called()
-        route.fulfill.assert_not_called()
+        route.fetch.assert_called_once()
+        store.assert_called_once()
+        route.fulfill.assert_called_once_with(response=fetched, body=b"bundle")
+        route.continue_.assert_not_called()
 
         route.reset_mock()
         with mock.patch.object(
@@ -342,6 +352,20 @@ class BrowserHeadlessConfigTests(unittest.TestCase):
         handler(route, document)
         route.continue_.assert_called_once()
         route.fetch.assert_not_called()
+
+        route.reset_mock()
+        route.fetch.side_effect = RuntimeError("proxy timeout")
+        hashed = mock.Mock(
+            url="https://accounts.x.ai/_next/static/chunks/app-hash.js",
+            resource_type="script",
+            method="GET",
+            headers={},
+        )
+        with mock.patch.object(browser_session, "_cached_response", return_value=None):
+            handler(route, hashed)
+        route.fetch.assert_called_once()
+        route.continue_.assert_called_once()
+        route.fulfill.assert_not_called()
 
     def test_accounts_resource_diagnostics_is_disabled_outside_debug(self):
         browser_session.configure(is_debug=lambda: False)
@@ -453,19 +477,12 @@ class LowTrafficCacheTests(unittest.TestCase):
         _matcher, handler = context.route.call_args.args
         url = "https://accounts.x.ai/_next/static/chunks/app-hash.js"
         route = mock.Mock()
+        route.fetch.return_value = self._script_response(b"console.log('bundle')")
         request = mock.Mock(url=url, resource_type="script", method="GET", headers={})
-        response_cb = context.on.call_args.args[1]
-        fake_response = mock.Mock(
-            status=200,
-            headers={"content-type": "application/javascript"},
-            body=mock.Mock(return_value=b"console.log('bundle')"),
-            request=request,
-        )
 
         handler(route, request)
-        route.continue_.assert_called_once()
-        route.fetch.assert_not_called()
-        response_cb(fake_response)
+        route.fetch.assert_called_once()
+        route.fulfill.assert_called()
         snapshot = browser_session.inspect_low_traffic_cache()
         self.assertEqual(snapshot["entry_count"], 1)
         self.assertEqual(snapshot["entries"][0]["scope"], "more")
@@ -483,9 +500,9 @@ class LowTrafficCacheTests(unittest.TestCase):
         self.assertGreaterEqual(cleared["deleted_files"], 2)
 
         route.reset_mock()
+        route.fetch.return_value = self._script_response(b"console.log('bundle')")
         handler(route, request)
-        route.continue_.assert_called_once()
-        response_cb(fake_response)
+        route.fetch.assert_called_once()
         refilled = browser_session.inspect_low_traffic_cache()
         self.assertEqual(refilled["entry_count"], 1)
         self.assertTrue(refilled["entries"][0]["active"])

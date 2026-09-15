@@ -677,39 +677,6 @@ def clear_low_traffic_cache() -> dict:
     return snapshot
 
 
-def _maybe_cache_low_traffic_response(response) -> int:
-    """原生网络返回后再写入缓存，避免 route.fetch 再绕一圈代理。"""
-    try:
-        request = getattr(response, "request", None)
-        if request is None:
-            return 0
-        url = str(getattr(request, "url", "") or "")
-        resource_type = str(getattr(request, "resource_type", "") or "")
-        method = str(getattr(request, "method", "GET") or "GET")
-        request_headers = getattr(request, "headers", {}) or {}
-        if any(str(key).lower() == "range" for key in request_headers):
-            return 0
-        if not low_traffic_should_cache(url, resource_type, method):
-            return 0
-        if _cached_response(url) is not None:
-            return 0
-        status = int(getattr(response, "status", 0) or 0)
-        if status != 200:
-            return 0
-        body = response.body()
-        headers = dict(getattr(response, "headers", {}) or {})
-        lock = _low_traffic_cache_lock(url)
-        stored = 0
-        with lock:
-            if _cached_response(url) is None:
-                _store_cached_response(url, status, headers, body)
-                if _cached_response(url) is not None:
-                    stored = len(body)
-        return stored
-    except Exception:
-        return 0
-
-
 def _install_low_traffic_routing(browser_context, log_callback=None) -> None:
     if not low_traffic_enabled() or not hasattr(browser_context, "route"):
         return
@@ -779,19 +746,7 @@ def _install_low_traffic_routing(browser_context, log_callback=None) -> None:
         except Exception:
             route.continue_()
 
-    def on_response(response):
-        request = getattr(response, "request", None)
-        url = str(getattr(request, "url", "") or "") if request is not None else ""
-        stored = _maybe_cache_low_traffic_response(response)
-        if stored and log_callback:
-            log_callback(
-                "[*] 低流量缓存未命中，已重新下载: "
-                f"{_short_cache_url(url)} ({stored} bytes)"
-            )
-
     browser_context.route(low_traffic_should_intercept, handle)
-    if hasattr(browser_context, "on"):
-        browser_context.on("response", on_response)
     if log_callback:
         if traffic_savings_level() == "more":
             log_callback("[*] 低流量模式：已启用 grok.com 与 accounts.x.ai 静态资源缓存与非业务媒体拦截")
