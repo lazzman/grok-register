@@ -677,6 +677,7 @@ def clear_low_traffic_cache() -> dict:
     return snapshot
 
 
+
 def _install_low_traffic_routing(browser_context, log_callback=None) -> None:
     if not low_traffic_enabled() or not hasattr(browser_context, "route"):
         return
