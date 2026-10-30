@@ -12,7 +12,8 @@ usage() {
 
 默认将当前 Grok Register 分支安全 rebase 到 upstream/main。
 脚本会校验 origin=lazzman/grok-register、upstream=kaibush/grok-register，
-保护未提交与未跟踪改动，fetch 后启动 rebase；不会自动推送。
+保护未提交与未跟踪改动，fetch 后只重放 lazzman <lazzman@lazzman.com> 的提交；
+作者仓库与 GitHub Actions 的提交会被 drop。不会自动推送。
 
 冲突时保留现场：
   RESULT=CONFLICT       退出码 20
@@ -153,7 +154,14 @@ printf 'STASH_REF=%s\n' "${stash_ref:-none}"
 printf 'STASH_COMMIT=%s\n' "${stash_commit:-none}"
 printf 'PUSH_HINT=git push --force-with-lease origin HEAD:%s\n' "$branch"
 
-if ! git rebase "$upstream_ref"; then
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+todo_editor="${script_dir}/keep_owner_rebase_todo.sh"
+[[ -f "$todo_editor" ]] || fail "缺少个人提交过滤器: $todo_editor"
+export GROK_REBASE_OWNER_NAME="lazzman"
+export GROK_REBASE_OWNER_EMAIL="lazzman@lazzman.com"
+
+# author 必须同时匹配姓名和邮箱。只 drop 非个人提交，不使用 rebase --skip。
+if ! GIT_SEQUENCE_EDITOR="$todo_editor" git rebase -i "$upstream_ref"; then
   if in_git_state rebase-merge || in_git_state rebase-apply; then
     printf 'CONFLICT_FILES=\n'
     git diff --name-only --diff-filter=U
@@ -162,7 +170,6 @@ if ! git rebase "$upstream_ref"; then
   fi
   fail "git rebase 执行失败，但未进入可解决的冲突状态"
 fi
-
 if [[ -n "$stash_ref" ]]; then
   if ! git stash pop "$stash_ref"; then
     printf 'CONFLICT_FILES=\n'
