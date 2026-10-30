@@ -21,6 +21,7 @@ description: 安全地将当前 Grok Register 分支的本地提交 rebase 到�
 - 工作区不干净时，使用 `git stash push --include-untracked` 保护；成功后恢复 stash。
 - 冲突中的 `--ours` 是 `upstream` 基线，`--theirs` 是正在重放的本地提交。必须先读三方版本和 `REBASE_HEAD`，再合并两方有效改动。
 - 禁止向 `upstream` 推送；脚本将其推送地址固定为 `DISABLED`。
+- 只重放作者为 `lazzman <lazzman@lazzman.com>` 的提交。`kaibush`、`github-actions[bot]` 以及其他作者的提交必须 drop，不能因为它们曾经出现在 fork 历史上就再次接到 `upstream` 后面。按 author 判断，不能按 committer 判断；rebase 会把 committer 改成执行操作的人。
 - 默认不 push。用户明确要求发布时，才执行 `git push --force-with-lease origin HEAD:<当前分支>`。
 
 ## 执行
@@ -33,7 +34,7 @@ bash .agents/skills/grok-register-rebase-upstream/scripts/rebase_upstream.sh
 bash .agents/skills/grok-register-rebase-upstream/scripts/rebase_upstream.sh upstream/main
 ```
 
-脚本会校验双远程、固定 `main` 的“`upstream` 拉取 / `origin` 推送”路由、抓取 `upstream` 与 `origin`、保护脏工作区、执行 rebase 并输出：
+脚本会校验双远程、固定 `main` 的“`upstream` 拉取 / `origin` 推送”路由、抓取 `upstream` 与 `origin`、保护脏工作区，然后只重放个人提交。非个人提交会在 todo 中改为 `drop`，并输出 `SKIP_NOT_OWNER`。结果格式：
 
 ```text
 BRANCH=...
